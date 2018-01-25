@@ -5,6 +5,7 @@ using System.Data;
 using System.Drawing;
 using System.Text;
 using System.Windows.Forms;
+using static BackupReader.Functions;
 
 namespace BackupReader
 {
@@ -34,16 +35,14 @@ namespace BackupReader
                 savecatalogToolStripButton.Enabled = false;
 
                 // Open and read the catalog
-                if (mBackupReader != null) mBackupReader.Close();
-                mBackupReader = new CBackupReader(mFileName);
-                mBackupReader.OnProgressChange += mFile_OnProgressChange;
-                var rootNode = mBackupReader.ReadCatalog();
-                
+                var catalogNodes = ReadCatalog(mFileName);
+                var root = catalogNodes[0];
+
                 // Populate tree view
                 tvDirs.Nodes.Clear();
-                tvDirs.Nodes.Add("root", rootNode.Name, 0);
-                tvDirs.Nodes[0].Tag = rootNode;
-                PopulateTreeView(tvDirs.Nodes[0], rootNode);
+                tvDirs.Nodes.Add("root", root.Name, 0);
+                tvDirs.Nodes[0].Tag = root;
+                PopulateTreeView(tvDirs.Nodes[0], catalogNodes.GetRange(1, catalogNodes.Count - 1));
                 tsStatus.Text = "Select a single volume, folder or file to extract.";
 
                 // UI cues
@@ -97,6 +96,48 @@ namespace BackupReader
                     TNode.Nodes.Add(snode);
                 }
                 PopulateTreeView(snode, node);
+            }
+        }
+
+        private void PopulateTreeView(TreeNode TNode, List<CatalogNode> flatNodes)
+        {
+            TreeNode lastSetNode = null;
+            TreeNode lastVolumeNode = null;
+            TreeNode lastFolderNode = null;
+
+            foreach (var node in flatNodes)
+            {
+                TreeNode snode = new TreeNode(node.Name);
+                switch (node.Type)
+                {
+                    case ENodeType.Set:
+                        lastSetNode = CreateTreeNode(node, 1);
+                        TNode.Nodes.Add(lastSetNode);
+                        break;
+                    case ENodeType.Volume:
+                        lastVolumeNode = CreateTreeNode(node, 2);
+                        lastSetNode.Nodes.Add(lastVolumeNode);
+                        break;
+                    case ENodeType.Folder:
+                        lastFolderNode = CreateTreeNode(node, 3);
+                        lastVolumeNode.Nodes.Add(lastFolderNode);
+                        break;
+                    case ENodeType.File:
+                        lastFolderNode.Nodes.Add(CreateTreeNode(node, 4));
+                        break;
+                    default:
+                        break;
+                }
+            }
+
+            TreeNode CreateTreeNode(CatalogNode node, int index)
+            {
+                return new TreeNode(node.Name)
+                {
+                    ImageIndex = index,
+                    SelectedImageIndex = index,
+                    Tag = node
+                };
             }
         }
 
@@ -168,7 +209,7 @@ namespace BackupReader
 
             if (tvDirs.SelectedNode == null) return;
             
-            var node = (CCatalogNode)tvDirs.SelectedNode.Tag;
+            var node = (CatalogNode)tvDirs.SelectedNode.Tag;
             if (node == null) return;
 
             detailsTextBox.Text = node.GetDetailsString();
