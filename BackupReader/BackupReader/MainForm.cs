@@ -13,10 +13,65 @@ namespace BackupReader
     {
         private string mFileName;
         private CBackupReader mBackupReader;
+        long mLastPosition = 0;
 
         public MainForm()
         {
             InitializeComponent();
+        }
+
+        void mFile_OnProgressChange(long length, long currentPosition)
+        {
+            long increment = length / 100;
+            if (currentPosition > mLastPosition + increment)
+            {
+                int progress = (int)(currentPosition / (float)length * 100.0f);
+                tsStatus.Text = "Reading backup file. " + progress + "% completed.";
+                Application.DoEvents();
+            }
+        }
+
+
+        private void PopulateTreeView(TreeNode TNode, List<CatalogNode> flatNodes)
+        {
+            TreeNode lastSetNode = null;
+            TreeNode lastVolumeNode = null;
+            TreeNode lastFolderNode = null;
+
+            foreach (var node in flatNodes)
+            {
+                TreeNode snode = new TreeNode(node.Name);
+                switch (node.Type)
+                {
+                    case ENodeType.Set:
+                        lastSetNode = CreateTreeNode(node, 1);
+                        TNode.Nodes.Add(lastSetNode);
+                        break;
+                    case ENodeType.Volume:
+                        lastVolumeNode = CreateTreeNode(node, 2);
+                        lastSetNode.Nodes.Add(lastVolumeNode);
+                        break;
+                    case ENodeType.Folder:
+                        lastFolderNode = CreateTreeNode(node, 3);
+                        lastVolumeNode.Nodes.Add(lastFolderNode);
+                        break;
+                    case ENodeType.File:
+                        lastFolderNode.Nodes.Add(CreateTreeNode(node, 4));
+                        break;
+                    default:
+                        break;
+                }
+            }
+
+            TreeNode CreateTreeNode(CatalogNode node, int index)
+            {
+                return new TreeNode(node.Name)
+                {
+                    ImageIndex = index,
+                    SelectedImageIndex = index,
+                    Tag = node
+                };
+            }
         }
 
         private void openToolStripButton_Click(object sender, EventArgs e)
@@ -35,7 +90,7 @@ namespace BackupReader
                 savecatalogToolStripButton.Enabled = false;
 
                 // Open and read the catalog
-                var catalogNodes = ReadCatalog(mFileName);
+                var catalogNodes = ReadCatalog(mFileName, mFile_OnProgressChange);
                 var root = catalogNodes[0];
 
                 // Populate tree view
@@ -99,48 +154,6 @@ namespace BackupReader
             }
         }
 
-        private void PopulateTreeView(TreeNode TNode, List<CatalogNode> flatNodes)
-        {
-            TreeNode lastSetNode = null;
-            TreeNode lastVolumeNode = null;
-            TreeNode lastFolderNode = null;
-
-            foreach (var node in flatNodes)
-            {
-                TreeNode snode = new TreeNode(node.Name);
-                switch (node.Type)
-                {
-                    case ENodeType.Set:
-                        lastSetNode = CreateTreeNode(node, 1);
-                        TNode.Nodes.Add(lastSetNode);
-                        break;
-                    case ENodeType.Volume:
-                        lastVolumeNode = CreateTreeNode(node, 2);
-                        lastSetNode.Nodes.Add(lastVolumeNode);
-                        break;
-                    case ENodeType.Folder:
-                        lastFolderNode = CreateTreeNode(node, 3);
-                        lastVolumeNode.Nodes.Add(lastFolderNode);
-                        break;
-                    case ENodeType.File:
-                        lastFolderNode.Nodes.Add(CreateTreeNode(node, 4));
-                        break;
-                    default:
-                        break;
-                }
-            }
-
-            TreeNode CreateTreeNode(CatalogNode node, int index)
-            {
-                return new TreeNode(node.Name)
-                {
-                    ImageIndex = index,
-                    SelectedImageIndex = index,
-                    Tag = node
-                };
-            }
-        }
-
         private void extractToolStripButton_Click(object sender, EventArgs e)
         {
             if (tvDirs.SelectedNode == null) return;
@@ -189,12 +202,6 @@ namespace BackupReader
         private void frmMain_FormClosed(object sender, FormClosedEventArgs e)
         {
             if (mBackupReader != null) mBackupReader.Close();
-        }
-
-        void mFile_OnProgressChange(int progress)
-        {
-            tsStatus.Text = "Reading backup file. " + progress + "% completed.";
-            Application.DoEvents();
         }
 
         private void cancelToolStripButton_Click(object sender, EventArgs e)

@@ -5,6 +5,8 @@ using System.Text;
 
 namespace BackupReader
 {
+    public delegate void ProgressChange(long length, long currentPosition);
+
     class CatalogNode
     {
         public string Name { get; set; }
@@ -154,21 +156,21 @@ namespace BackupReader
             return nodes;
         }
 
-        public static IEnumerable<(EBlockType type, CDescriptorBlock block)> GenerateBlocks(CBackupStream stream)
+        public static IEnumerable<(EBlockType type, CDescriptorBlock block)> ReadBlocks(this CBackupStream stream, ProgressChange reportProgress)
         {
             while (stream.BaseStream.Position + 4 < stream.BaseStream.Length)
             {
                 EBlockType et = (EBlockType)stream.ReadUInt32();
                 stream.BaseStream.Seek(-4, System.IO.SeekOrigin.Current);
                 yield return (type: et, block: stream.ReadDBLK());
-
+                reportProgress(stream.BaseStream.Length, stream.BaseStream.Position);
             }
         }
 
         /// <summary>
         /// Reads the catalog from the disk.
         /// </summary>
-        public static List<CatalogNode> ReadCatalog(string filename)
+        public static List<CatalogNode> ReadCatalog(string filename, ProgressChange onProgressChange)
         {
             var stream = new CBackupStream(filename);
 
@@ -185,9 +187,9 @@ namespace BackupReader
                     Offset = tapeHeaderDescriptorBlock.StartPosition
                 }
             };
-
+            
             nodes.AddRange(
-                GenerateBlocks(stream)
+                stream.ReadBlocks(onProgressChange)
                 .Where(block => block.type != EBlockType.MTF_EOTM)
                 .SelectMany(block => CreateNodeByType(block.type, block.block))
                 .ToList()
