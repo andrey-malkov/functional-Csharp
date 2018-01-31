@@ -2,6 +2,8 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Diagnostics;
+using System.Threading;
 
 namespace BackupReader
 {
@@ -156,13 +158,14 @@ namespace BackupReader
             return nodes;
         }
 
-        public static IEnumerable<(EBlockType type, CDescriptorBlock block)> ReadBlocks(this CBackupStream stream, ProgressChange reportProgress)
+        public static IEnumerable<(EBlockType type, CDescriptorBlock block)> ReadBlocks(this CBackupStream stream, ProgressChange reportProgress, CancellationToken cancelToken)
         {
             while (stream.BaseStream.Position + 4 < stream.BaseStream.Length)
             {
                 EBlockType et = (EBlockType)stream.ReadUInt32();
                 stream.BaseStream.Seek(-4, System.IO.SeekOrigin.Current);
                 yield return (type: et, block: stream.ReadDBLK());
+                cancelToken.ThrowIfCancellationRequested();
                 reportProgress(stream.BaseStream.Length, stream.BaseStream.Position);
             }
         }
@@ -170,7 +173,7 @@ namespace BackupReader
         /// <summary>
         /// Reads the catalog from the disk.
         /// </summary>
-        public static List<CatalogNode> ReadCatalog(string filename, ProgressChange onProgressChange)
+        public static List<CatalogNode> ReadCatalog(string filename, ProgressChange onProgressChange, CancellationToken cancelToken)
         {
             var stream = new CBackupStream(filename);
 
@@ -187,13 +190,19 @@ namespace BackupReader
                     Offset = tapeHeaderDescriptorBlock.StartPosition
                 }
             };
-            
-            nodes.AddRange(
-                stream.ReadBlocks(onProgressChange)
-                .Where(block => block.type != EBlockType.MTF_EOTM)
-                .SelectMany(block => CreateNodeByType(block.type, block.block))
-                .ToList()
-            );
+
+            try {
+                nodes.AddRange(
+                    stream.ReadBlocks(onProgressChange, cancelToken)
+                    .Where(block => block.type != EBlockType.MTF_EOTM)
+                    .SelectMany(block => CreateNodeByType(block.type, block.block))
+                    .ToList()
+                );
+            }
+            catch (OperationCanceledException)
+            {
+
+            }
 
             return nodes;
         }

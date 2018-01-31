@@ -6,6 +6,7 @@ using System.Drawing;
 using System.Text;
 using System.Windows.Forms;
 using static BackupReader.Functions;
+using System.Threading;
 
 namespace BackupReader
 {
@@ -14,6 +15,8 @@ namespace BackupReader
         private string mFileName;
         private CBackupReader mBackupReader;
         long mLastPosition = 0;
+        CancellationTokenSource mCancellation = new CancellationTokenSource();
+
 
         public MainForm()
         {
@@ -90,7 +93,7 @@ namespace BackupReader
                 savecatalogToolStripButton.Enabled = false;
 
                 // Open and read the catalog
-                var catalogNodes = ReadCatalog(mFileName, mFile_OnProgressChange);
+                var catalogNodes = ReadCatalog(mFileName, mFile_OnProgressChange, mCancellation.Token);
                 var root = catalogNodes[0];
 
                 // Populate tree view
@@ -207,7 +210,7 @@ namespace BackupReader
         private void cancelToolStripButton_Click(object sender, EventArgs e)
         {
             if (MessageBox.Show(this, "Are you sure you want to cancel?", "Backup Reader", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
-                mBackupReader.CancelRead();
+                mCancellation.Cancel();
         }
 
         private void tvDirs_AfterSelect(object sender, TreeViewEventArgs e)
