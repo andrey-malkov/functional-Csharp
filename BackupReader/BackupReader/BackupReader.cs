@@ -7,8 +7,6 @@ using System.Threading;
 
 namespace BackupReader
 {
-    public delegate void ProgressChange(long length, long currentPosition);
-
     class CatalogNode
     {
         public string Name { get; set; }
@@ -29,83 +27,46 @@ namespace BackupReader
         }
     }
 
-    static class Functions
+    public delegate void ProgressChange(long length, long currentPosition);
+
+    static class Catalog
     {
-
-        public static List<string> GetFiles(CFileDescriptorBlock fileDescriptorBlock)
+        /// <summary>
+        /// Reads the catalog from the disk.
+        /// </summary>
+        public static List<CatalogNode> Read(string filename, ProgressChange onProgressChange, CancellationToken cancelToken)
         {
-            var files = new List<string>();
+            var stream = new CBackupStream(filename);
 
-            if ((fileDescriptorBlock.FileAttributes & EFileAttributes.FILE_NAME_IN_STREAM_BIT) != 0)
+            try
             {
-                foreach (var data in fileDescriptorBlock.Streams)
-                {
-                    if (data.Header.StreamID == "FNAM")
-                    {
-                        if (fileDescriptorBlock.StringType == EStringType.ANSI)
-                        {
-                            ASCIIEncoding encoding = new ASCIIEncoding();
-                            files.Add(encoding.GetString(data.Data));
-                        }
-                        else if (fileDescriptorBlock.StringType == EStringType.Unicode)
-                        {
-                            UnicodeEncoding encoding = new UnicodeEncoding();
-                            files.Add(encoding.GetString(data.Data));
-                        }
-
-                    }
-                }
+                return stream.ReadBlocks(onProgressChange, cancelToken)
+                    .Where(block => block.type != EBlockType.MTF_EOTM)
+                    .SelectMany(block => CreateNodeByType(block.type, block.block))
+                    .ToList();
             }
-            else
+            catch (OperationCanceledException)
             {
-                files.Add(fileDescriptorBlock.FileName);
-            }
-
-            return files;
-        }
-
-        public static List<string> GetForlders(CDirectoryDescriptorBlock directoryDescriptorBlock)
-        {
-            var folders = new List<string>();
-
-            if ((directoryDescriptorBlock.DIRBAttributes & EDIRBAttributes.DIRB_PATH_IN_STREAM_BIT) != 0)
-            {
-                foreach (CDataStream data in directoryDescriptorBlock.Streams)
-                {
-                    if (data.Header.StreamID == "PNAM")
-                    {
-                        if (directoryDescriptorBlock.StringType == EStringType.ANSI)
-                        {
-                            folders.Add(GetFileName(new ASCIIEncoding(), data));
-                        }
-                        else if (directoryDescriptorBlock.StringType == EStringType.Unicode)
-                        {
-                            folders.Add(GetFileName(new UnicodeEncoding(), data));
-                        }
-
-                    }
-                }
-            }
-            else
-            {
-                folders.Add(directoryDescriptorBlock.DirectoryName.Substring(0, directoryDescriptorBlock.DirectoryName.Length - 1));
-            }
-
-            return folders;
-
-            string GetFileName<T>(T encoding, CDataStream data) where T : Encoding
-            {
-                var folderName = encoding.GetString(data.Data);
-                return folderName.Substring(0, folderName.Length - 1);
+                return null;
             }
         }
 
-        public static List<CatalogNode> CreateNodeByType(EBlockType eBlockType, CDescriptorBlock block)
+        private static List<CatalogNode> CreateNodeByType(EBlockType eBlockType, CDescriptorBlock block)
         {
             var nodes = new List<CatalogNode>();
 
             switch (eBlockType)
             {
+                case EBlockType.ROOT:
+                    var tapeHeaderDescriptorBlock = (CTapeHeaderDescriptorBlock)block;
+                    nodes.Add(new CatalogNode
+                    {
+                        DescriptorBlock = tapeHeaderDescriptorBlock,
+                        Type = ENodeType.Root,
+                        Name = tapeHeaderDescriptorBlock.MediaName,
+                        Offset = tapeHeaderDescriptorBlock.StartPosition
+                    });
+                    break;
                 case EBlockType.MTF_SSET:
                     var dataSetDescriptorBlock = (CStartOfDataSetDescriptorBlock)block;
                     nodes.Add(new CatalogNode
@@ -156,55 +117,91 @@ namespace BackupReader
             }
 
             return nodes;
+
+            List<string> GetFiles(CFileDescriptorBlock fileDescriptorBlock)
+            {
+                var files = new List<string>();
+
+                if ((fileDescriptorBlock.FileAttributes & EFileAttributes.FILE_NAME_IN_STREAM_BIT) != 0)
+                {
+                    foreach (var data in fileDescriptorBlock.Streams)
+                    {
+                        if (data.Header.StreamID == "FNAM")
+                        {
+                            if (fileDescriptorBlock.StringType == EStringType.ANSI)
+                            {
+                                ASCIIEncoding encoding = new ASCIIEncoding();
+                                files.Add(encoding.GetString(data.Data));
+                            }
+                            else if (fileDescriptorBlock.StringType == EStringType.Unicode)
+                            {
+                                UnicodeEncoding encoding = new UnicodeEncoding();
+                                files.Add(encoding.GetString(data.Data));
+                            }
+
+                        }
+                    }
+                }
+                else
+                {
+                    files.Add(fileDescriptorBlock.FileName);
+                }
+
+                return files;
+            }
+
+            List<string> GetForlders(CDirectoryDescriptorBlock directoryDescriptorBlock)
+            {
+                var folders = new List<string>();
+
+                if ((directoryDescriptorBlock.DIRBAttributes & EDIRBAttributes.DIRB_PATH_IN_STREAM_BIT) != 0)
+                {
+                    foreach (CDataStream data in directoryDescriptorBlock.Streams)
+                    {
+                        if (data.Header.StreamID == "PNAM")
+                        {
+                            if (directoryDescriptorBlock.StringType == EStringType.ANSI)
+                            {
+                                folders.Add(GetFileName(new ASCIIEncoding(), data));
+                            }
+                            else if (directoryDescriptorBlock.StringType == EStringType.Unicode)
+                            {
+                                folders.Add(GetFileName(new UnicodeEncoding(), data));
+                            }
+
+                        }
+                    }
+                }
+                else
+                {
+                    folders.Add(directoryDescriptorBlock.DirectoryName.Substring(0, directoryDescriptorBlock.DirectoryName.Length - 1));
+                }
+
+                return folders;
+
+                string GetFileName<T>(T encoding, CDataStream data) where T : Encoding
+                {
+                    var folderName = encoding.GetString(data.Data);
+                    return folderName.Substring(0, folderName.Length - 1);
+                }
+            }
         }
 
-        public static IEnumerable<(EBlockType type, CDescriptorBlock block)> ReadBlocks(this CBackupStream stream, ProgressChange reportProgress, CancellationToken cancelToken)
+        private static IEnumerable<(EBlockType type, CDescriptorBlock block)> ReadBlocks(this CBackupStream stream, ProgressChange reportProgress, CancellationToken cancelToken)
         {
+            var tapeHeaderDescriptorBlock = stream.ReadDBLK();
+            var filemarkDescriptorBlock = stream.ReadDBLK();
+            yield return (type: EBlockType.ROOT, block: tapeHeaderDescriptorBlock);
+
             while (stream.BaseStream.Position + 4 < stream.BaseStream.Length)
             {
                 EBlockType et = (EBlockType)stream.ReadUInt32();
                 stream.BaseStream.Seek(-4, System.IO.SeekOrigin.Current);
                 yield return (type: et, block: stream.ReadDBLK());
+
                 cancelToken.ThrowIfCancellationRequested();
                 reportProgress(stream.BaseStream.Length, stream.BaseStream.Position);
             }
-        }
-
-        /// <summary>
-        /// Reads the catalog from the disk.
-        /// </summary>
-        public static List<CatalogNode> ReadCatalog(string filename, ProgressChange onProgressChange, CancellationToken cancelToken)
-        {
-            var stream = new CBackupStream(filename);
-
-            var tapeHeaderDescriptorBlock = (CTapeHeaderDescriptorBlock)stream.ReadDBLK();
-            var filemarkDescriptorBlock = (CSoftFilemarkDescriptorBlock)stream.ReadDBLK();
-
-            var nodes = new List<CatalogNode>()
-            {
-                new CatalogNode
-                {
-                    DescriptorBlock = tapeHeaderDescriptorBlock,
-                    Type = ENodeType.Root,
-                    Name = tapeHeaderDescriptorBlock.MediaName,
-                    Offset = tapeHeaderDescriptorBlock.StartPosition
-                }
-            };
-
-            try {
-                nodes.AddRange(
-                    stream.ReadBlocks(onProgressChange, cancelToken)
-                    .Where(block => block.type != EBlockType.MTF_EOTM)
-                    .SelectMany(block => CreateNodeByType(block.type, block.block))
-                    .ToList()
-                );
-            }
-            catch (OperationCanceledException)
-            {
-
-            }
-
-            return nodes;
         }
     }
 }

@@ -8,6 +8,7 @@ namespace BackupReader
 
     enum EBlockType: uint
     {
+        ROOT = 0x0,
         /// <summary>
         /// TAPE descriptor block
         /// </summary>

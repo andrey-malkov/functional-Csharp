@@ -5,9 +5,9 @@ using System.Data;
 using System.Drawing;
 using System.Text;
 using System.Windows.Forms;
-using static BackupReader.Functions;
 using System.Diagnostics;
 using System.Threading;
+//using static BackupReader.Catalog;
 
 namespace BackupReader
 {
@@ -93,7 +93,7 @@ namespace BackupReader
                 opencatalogToolStripButton.Enabled = false;
                 savecatalogToolStripButton.Enabled = false;
 
-                var catalogNodes = ReadCatalog(mFileName, mFile_OnProgressChange, mCancellation.Token);
+                var catalogNodes = Catalog.Read(mFileName, mFile_OnProgressChange, mCancellation.Token);
                 var root = catalogNodes[0];
 
                 // Populate tree view
