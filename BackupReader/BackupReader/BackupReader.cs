@@ -27,6 +27,67 @@ namespace BackupReader
         }
     }
 
+    class RootCatalogNode : CatalogNode
+    {
+        public RootCatalogNode(CTapeHeaderDescriptorBlock tapeHeaderDescriptorBlock)
+        {
+            DescriptorBlock = tapeHeaderDescriptorBlock;
+            Type = ENodeType.Root;
+            Name = tapeHeaderDescriptorBlock.MediaName;
+            Offset = tapeHeaderDescriptorBlock.StartPosition;
+        }
+    }
+
+    class SetCatalogNode : CatalogNode
+    {
+        public SetCatalogNode(CStartOfDataSetDescriptorBlock dataSetDescriptorBlock)
+        {
+            DescriptorBlock = dataSetDescriptorBlock;
+            Name = "Set: " + dataSetDescriptorBlock.DataSetNumber + " - " + dataSetDescriptorBlock.DataSetName;
+            Type = ENodeType.Set;
+        }
+    }
+
+    class VolumeCatalogNode : CatalogNode
+    {
+        public VolumeCatalogNode(CVolumeDescriptorBlock volumeDescriptorBlock)
+        {
+            DescriptorBlock = volumeDescriptorBlock;
+            Name = volumeDescriptorBlock.DeviceName;
+            Type = ENodeType.Volume;
+        }
+    }
+
+    class DirectoryCatalogNode : CatalogNode
+    {
+        public DirectoryCatalogNode(CDirectoryDescriptorBlock directoryDescriptorBlock, string folderName)
+        {
+            DescriptorBlock = directoryDescriptorBlock;
+            Name = folderName;
+            Type = ENodeType.Folder;
+        }
+    }
+
+    class FileCatalogNode : CatalogNode
+    {
+        public FileCatalogNode(CFileDescriptorBlock fileDescriptorBlock, string fileName)
+        {
+            DescriptorBlock = fileDescriptorBlock;
+            Name = fileName;
+            Type = ENodeType.File;
+        }
+    }
+
+    class DBCatalogNode : CatalogNode
+    {
+        public DBCatalogNode(CDatabaseDescriptorBlock databaseDescriptorBlock)
+        {
+            DescriptorBlock = databaseDescriptorBlock;
+            Name = "Database - not yet implemented";
+            Type = ENodeType.Database;
+        }
+    }
+
     public delegate void ProgressChange(long length, long currentPosition);
 
     static class Catalog
@@ -58,59 +119,24 @@ namespace BackupReader
             switch (eBlockType)
             {
                 case EBlockType.ROOT:
-                    var tapeHeaderDescriptorBlock = (CTapeHeaderDescriptorBlock)block;
-                    nodes.Add(new CatalogNode
-                    {
-                        DescriptorBlock = tapeHeaderDescriptorBlock,
-                        Type = ENodeType.Root,
-                        Name = tapeHeaderDescriptorBlock.MediaName,
-                        Offset = tapeHeaderDescriptorBlock.StartPosition
-                    });
+                    nodes.Add(new RootCatalogNode((CTapeHeaderDescriptorBlock)block));
                     break;
                 case EBlockType.MTF_SSET:
-                    var dataSetDescriptorBlock = (CStartOfDataSetDescriptorBlock)block;
-                    nodes.Add(new CatalogNode
-                    {
-                        DescriptorBlock = dataSetDescriptorBlock,
-                        Name = "Set: " + dataSetDescriptorBlock.DataSetNumber + " - " + dataSetDescriptorBlock.DataSetName,
-                        Type = ENodeType.Set
-                    });
+                    nodes.Add(new SetCatalogNode((CStartOfDataSetDescriptorBlock)block));
                     break;
                 case EBlockType.MTF_VOLB:
-                    var volumeDescriptorBlock = (CVolumeDescriptorBlock)block;
-                    nodes.Add(new CatalogNode
-                    {
-                        DescriptorBlock = volumeDescriptorBlock,
-                        Name = volumeDescriptorBlock.DeviceName,
-                        Type = ENodeType.Volume
-                    });
+                    nodes.Add(new VolumeCatalogNode((CVolumeDescriptorBlock)block));
                     break;
                 case EBlockType.MTF_DIRB:
                     var directoryDescriptorBlock = (CDirectoryDescriptorBlock)block;
-                    nodes.AddRange(GetForlders(directoryDescriptorBlock).Select(folder => new CatalogNode
-                    {
-                        DescriptorBlock = directoryDescriptorBlock,
-                        Name = folder,
-                        Type = ENodeType.Folder
-                    }));
+                    nodes.AddRange(GetForlders(directoryDescriptorBlock).Select(folder => new DirectoryCatalogNode(directoryDescriptorBlock, folder)));
                     break;
                 case EBlockType.MTF_FILE:
                     var fileDescriptorBlock = (CFileDescriptorBlock)block;
-                    nodes.AddRange(GetFiles(fileDescriptorBlock).Select(file => new CatalogNode
-                    {
-                        DescriptorBlock = fileDescriptorBlock,
-                        Name = file,
-                        Type = ENodeType.File
-                    }));
+                    nodes.AddRange(GetFiles(fileDescriptorBlock).Select(file => new FileCatalogNode(fileDescriptorBlock, file)));
                     break;
                 case EBlockType.MTF_DBDB:
-                    var databaseDescriptorBlock = (CDatabaseDescriptorBlock)block;
-                    nodes.Add(new CatalogNode
-                    {
-                        DescriptorBlock = databaseDescriptorBlock,
-                        Name = "Database - not yet implemented",
-                        Type = ENodeType.Database
-                    });
+                    nodes.Add(new DBCatalogNode((CDatabaseDescriptorBlock)block));
                     break;
                 default:
                     break;
@@ -118,10 +144,8 @@ namespace BackupReader
 
             return nodes;
 
-            List<string> GetFiles(CFileDescriptorBlock fileDescriptorBlock)
+            IEnumerable<string> GetFiles(CFileDescriptorBlock fileDescriptorBlock)
             {
-                var files = new List<string>();
-
                 if ((fileDescriptorBlock.FileAttributes & EFileAttributes.FILE_NAME_IN_STREAM_BIT) != 0)
                 {
                     foreach (var data in fileDescriptorBlock.Streams)
@@ -131,12 +155,12 @@ namespace BackupReader
                             if (fileDescriptorBlock.StringType == EStringType.ANSI)
                             {
                                 ASCIIEncoding encoding = new ASCIIEncoding();
-                                files.Add(encoding.GetString(data.Data));
+                                yield return encoding.GetString(data.Data);
                             }
                             else if (fileDescriptorBlock.StringType == EStringType.Unicode)
                             {
                                 UnicodeEncoding encoding = new UnicodeEncoding();
-                                files.Add(encoding.GetString(data.Data));
+                                yield return encoding.GetString(data.Data);
                             }
 
                         }
@@ -144,16 +168,12 @@ namespace BackupReader
                 }
                 else
                 {
-                    files.Add(fileDescriptorBlock.FileName);
+                    yield return fileDescriptorBlock.FileName;
                 }
-
-                return files;
             }
 
-            List<string> GetForlders(CDirectoryDescriptorBlock directoryDescriptorBlock)
+            IEnumerable<string> GetForlders(CDirectoryDescriptorBlock directoryDescriptorBlock)
             {
-                var folders = new List<string>();
-
                 if ((directoryDescriptorBlock.DIRBAttributes & EDIRBAttributes.DIRB_PATH_IN_STREAM_BIT) != 0)
                 {
                     foreach (CDataStream data in directoryDescriptorBlock.Streams)
@@ -162,11 +182,11 @@ namespace BackupReader
                         {
                             if (directoryDescriptorBlock.StringType == EStringType.ANSI)
                             {
-                                folders.Add(GetFileName(new ASCIIEncoding(), data));
+                                yield return GetFileName(new ASCIIEncoding(), data);
                             }
                             else if (directoryDescriptorBlock.StringType == EStringType.Unicode)
                             {
-                                folders.Add(GetFileName(new UnicodeEncoding(), data));
+                                yield return GetFileName(new UnicodeEncoding(), data);
                             }
 
                         }
@@ -174,10 +194,8 @@ namespace BackupReader
                 }
                 else
                 {
-                    folders.Add(directoryDescriptorBlock.DirectoryName.Substring(0, directoryDescriptorBlock.DirectoryName.Length - 1));
+                    yield return directoryDescriptorBlock.DirectoryName.Substring(0, directoryDescriptorBlock.DirectoryName.Length - 1);
                 }
-
-                return folders;
 
                 string GetFileName<T>(T encoding, CDataStream data) where T : Encoding
                 {
