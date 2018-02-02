@@ -93,22 +93,15 @@ namespace BackupReader
                 opencatalogToolStripButton.Enabled = false;
                 savecatalogToolStripButton.Enabled = false;
 
-                Stopwatch stopwatch = new Stopwatch();
-                stopwatch.Start();
-
-                // Open and read the catalog
                 var catalogNodes = ReadCatalog(mFileName, mFile_OnProgressChange, mCancellation.Token);
                 var root = catalogNodes[0];
-
-                stopwatch.Stop();
 
                 // Populate tree view
                 tvDirs.Nodes.Clear();
                 tvDirs.Nodes.Add("root", root.Name, 0);
                 tvDirs.Nodes[0].Tag = root;
                 PopulateTreeView(tvDirs.Nodes[0], catalogNodes.GetRange(1, catalogNodes.Count - 1));
-                //tsStatus.Text = "Select a single volume, folder or file to extract.";
-                tsStatus.Text = string.Format("Time elapsed: {0}", stopwatch.Elapsed);
+                tsStatus.Text = "Select a single volume, folder or file to extract.";
 
                 // UI cues
                 openToolStripButton.Enabled = true;
