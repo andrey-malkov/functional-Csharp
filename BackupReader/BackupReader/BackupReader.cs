@@ -103,13 +103,35 @@ namespace BackupReader
             {
                 return stream.ReadBlocks(onProgressChange, cancelToken)
                     .Where(block => block.type != EBlockType.MTF_EOTM)
-                    .SelectMany(block => CreateNodeByType(block.type, block.block))
+                    .SelectMany(block => GetNodesByType(block.type, block.block))
                     .ToList();
             }
             catch (OperationCanceledException)
             {
                 return null;
             }
+        }
+
+        private static List<CatalogNode> InvokeOneByType(this Dictionary<EBlockType, Func<CDescriptorBlock, List<CatalogNode>>> factories, EBlockType eBlockType, CDescriptorBlock block)
+        {
+            Func<CDescriptorBlock, List<CatalogNode>> factory;
+            Func<CDescriptorBlock, List<CatalogNode>> defaultFactory = x => new List<CatalogNode>();
+            return (factories.TryGetValue(eBlockType, out factory) ? factory : defaultFactory).Invoke(block);
+        }
+
+        private static List<CatalogNode> GetNodesByType(EBlockType eBlockType, CDescriptorBlock block)
+        {
+            var NodesFactories = new Dictionary<EBlockType, Func<CDescriptorBlock, List<CatalogNode>>>();
+
+            NodesFactories[EBlockType.ROOT] = b => new List<CatalogNode>() { new RootCatalogNode((CTapeHeaderDescriptorBlock)b) };
+            NodesFactories[EBlockType.MTF_SSET] = b => new List<CatalogNode>() { new SetCatalogNode((CStartOfDataSetDescriptorBlock)b) };
+            NodesFactories[EBlockType.MTF_VOLB] = b => new List<CatalogNode>() { new VolumeCatalogNode((CVolumeDescriptorBlock)b) };
+            NodesFactories[EBlockType.MTF_DIRB] = b => GetForlders((CDirectoryDescriptorBlock)b).Select(folder => new DirectoryCatalogNode((CDirectoryDescriptorBlock)b, folder)).ToList<CatalogNode>();
+            NodesFactories[EBlockType.MTF_FILE] = b => GetFiles((CFileDescriptorBlock)b).Select(file => new FileCatalogNode((CFileDescriptorBlock)b, file)).ToList<CatalogNode>();
+            NodesFactories[EBlockType.MTF_DBDB] = b => new List<CatalogNode>() { new DBCatalogNode((CDatabaseDescriptorBlock)block) };
+
+            
+            return NodesFactories.InvokeOneByType(eBlockType, block);
         }
 
         private static List<CatalogNode> CreateNodeByType(EBlockType eBlockType, CDescriptorBlock block)
@@ -143,65 +165,65 @@ namespace BackupReader
             }
 
             return nodes;
+        }
 
-            IEnumerable<string> GetFiles(CFileDescriptorBlock fileDescriptorBlock)
+        private static IEnumerable<string> GetFiles(CFileDescriptorBlock fileDescriptorBlock)
+        {
+            if ((fileDescriptorBlock.FileAttributes & EFileAttributes.FILE_NAME_IN_STREAM_BIT) != 0)
             {
-                if ((fileDescriptorBlock.FileAttributes & EFileAttributes.FILE_NAME_IN_STREAM_BIT) != 0)
+                foreach (var data in fileDescriptorBlock.Streams)
                 {
-                    foreach (var data in fileDescriptorBlock.Streams)
+                    if (data.Header.StreamID == "FNAM")
                     {
-                        if (data.Header.StreamID == "FNAM")
+                        if (fileDescriptorBlock.StringType == EStringType.ANSI)
                         {
-                            if (fileDescriptorBlock.StringType == EStringType.ANSI)
-                            {
-                                ASCIIEncoding encoding = new ASCIIEncoding();
-                                yield return encoding.GetString(data.Data);
-                            }
-                            else if (fileDescriptorBlock.StringType == EStringType.Unicode)
-                            {
-                                UnicodeEncoding encoding = new UnicodeEncoding();
-                                yield return encoding.GetString(data.Data);
-                            }
-
+                            ASCIIEncoding encoding = new ASCIIEncoding();
+                            yield return encoding.GetString(data.Data);
                         }
+                        else if (fileDescriptorBlock.StringType == EStringType.Unicode)
+                        {
+                            UnicodeEncoding encoding = new UnicodeEncoding();
+                            yield return encoding.GetString(data.Data);
+                        }
+
                     }
-                }
-                else
-                {
-                    yield return fileDescriptorBlock.FileName;
                 }
             }
-
-            IEnumerable<string> GetForlders(CDirectoryDescriptorBlock directoryDescriptorBlock)
+            else
             {
-                if ((directoryDescriptorBlock.DIRBAttributes & EDIRBAttributes.DIRB_PATH_IN_STREAM_BIT) != 0)
-                {
-                    foreach (CDataStream data in directoryDescriptorBlock.Streams)
-                    {
-                        if (data.Header.StreamID == "PNAM")
-                        {
-                            if (directoryDescriptorBlock.StringType == EStringType.ANSI)
-                            {
-                                yield return GetFileName(new ASCIIEncoding(), data);
-                            }
-                            else if (directoryDescriptorBlock.StringType == EStringType.Unicode)
-                            {
-                                yield return GetFileName(new UnicodeEncoding(), data);
-                            }
+                yield return fileDescriptorBlock.FileName;
+            }
+        }
 
+        private static IEnumerable<string> GetForlders(CDirectoryDescriptorBlock directoryDescriptorBlock)
+        {
+            if ((directoryDescriptorBlock.DIRBAttributes & EDIRBAttributes.DIRB_PATH_IN_STREAM_BIT) != 0)
+            {
+                foreach (CDataStream data in directoryDescriptorBlock.Streams)
+                {
+                    if (data.Header.StreamID == "PNAM")
+                    {
+                        if (directoryDescriptorBlock.StringType == EStringType.ANSI)
+                        {
+                            yield return GetFileName(new ASCIIEncoding(), data);
                         }
+                        else if (directoryDescriptorBlock.StringType == EStringType.Unicode)
+                        {
+                            yield return GetFileName(new UnicodeEncoding(), data);
+                        }
+
                     }
                 }
-                else
-                {
-                    yield return directoryDescriptorBlock.DirectoryName.Substring(0, directoryDescriptorBlock.DirectoryName.Length - 1);
-                }
+            }
+            else
+            {
+                yield return directoryDescriptorBlock.DirectoryName.Substring(0, directoryDescriptorBlock.DirectoryName.Length - 1);
+            }
 
-                string GetFileName<T>(T encoding, CDataStream data) where T : Encoding
-                {
-                    var folderName = encoding.GetString(data.Data);
-                    return folderName.Substring(0, folderName.Length - 1);
-                }
+            string GetFileName<T>(T encoding, CDataStream data) where T : Encoding
+            {
+                var folderName = encoding.GetString(data.Data);
+                return folderName.Substring(0, folderName.Length - 1);
             }
         }
 
