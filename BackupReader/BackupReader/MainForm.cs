@@ -93,7 +93,7 @@ namespace BackupReader
                 opencatalogToolStripButton.Enabled = false;
                 savecatalogToolStripButton.Enabled = false;
 
-                var catalogNodes = Catalog.Read(mFileName, mFile_OnProgressChange, mCancellation.Token);
+                var catalogNodes = BackupReader.ReadBackup(mFileName, mFile_OnProgressChange, mCancellation.Token);
                 var root = catalogNodes[0];
 
                 // Populate tree view
@@ -232,18 +232,14 @@ namespace BackupReader
         {
             if (ofdCatalog.ShowDialog() == DialogResult.Cancel) return;
 
-            // Read the catalog from the file
             tsStatus.Text = "Reading catalog...";
-            mFileName = CCatalogNode.ReadBackupFilename(ofdCatalog.FileName);
-            if (mBackupReader != null) mBackupReader.Close();
-            mBackupReader = new CBackupReader(mFileName);
-            CCatalogNode node = CCatalogNode.ReadCatalog(ofdCatalog.FileName);
+            var catalogNodes = BackupReader.ReadCatalog(ofdCatalog.FileName, mFile_OnProgressChange, mCancellation.Token);
+            var root = catalogNodes[0];
 
-            // Populate tree view
             tvDirs.Nodes.Clear();
-            tvDirs.Nodes.Add("root", node.Name, 0);
-            tvDirs.Nodes[0].Tag = node;
-            PopulateTreeView(tvDirs.Nodes[0], node);
+            tvDirs.Nodes.Add("root", root.Name, 0);
+            tvDirs.Nodes[0].Tag = root;
+            PopulateTreeView(tvDirs.Nodes[0], catalogNodes.GetRange(1, catalogNodes.Count - 1));
             tsStatus.Text = "Select a single volume, folder or file to extract.";
 
             // UI cues

@@ -69,6 +69,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="BackupReader.cs" />
+    <Compile Include="BackupReaderImpl.cs" />
     <Compile Include="CatalogNode.cs" />
     <Compile Include="CBackupReader.cs" />
     <Compile Include="CBackupStream.cs" />
