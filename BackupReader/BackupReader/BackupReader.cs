@@ -13,11 +13,11 @@ namespace BackupReader
         /// <summary>
         /// Reads the backup (.bkf) from the disk.
         /// </summary>
-        public static List<CatalogNode> ReadBackup(string filename, ProgressChange onProgressChange, CancellationToken cancelToken)
+        public static List<CatalogNode> ReadBackup(CBackupStream backupStream, ProgressChange onProgressChange, CancellationToken cancelToken)
         {
             try
             {
-                return new CBackupStream(filename).ReadBlocks(onProgressChange, cancelToken)
+                return backupStream.ReadBlocks(onProgressChange, cancelToken)
                     .Where(block => (block.type != EBlockType.MTF_EOTM) || (block.type != 0))
                     .SelectMany(block => GetNodesByType(block.type, block.block))
                     .ToList();
