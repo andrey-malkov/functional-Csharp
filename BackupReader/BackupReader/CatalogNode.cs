@@ -11,7 +11,6 @@ namespace BackupReader
         public CDescriptorBlock DescriptorBlock { get; set; }
         public ENodeType Type { get; set; }
         public long Offset { get; set; }
-        public List<CatalogNode> Nodes { get; set; }
 
         public string GetDetailsString()
         {

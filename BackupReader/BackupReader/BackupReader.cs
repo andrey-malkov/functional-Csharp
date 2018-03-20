@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Threading;
+using System.IO;
 using static BackupReader.CatalogImpl;
 
 namespace BackupReader
@@ -28,15 +28,29 @@ namespace BackupReader
         /// <summary>
         /// Reads the catalog (.cat) from the disk.
         /// </summary>
-        public static List<CatalogNode> ReadCatalog(string filename, Action<long, long> onProgressChange, CancellationToken cancelToken)
+        public static List<CatalogNode> ReadCatalog(string filename)
         {
-            try
+            var file = new BinaryReader(new FileStream(filename, FileMode.Open, FileAccess.Read));
+            file.ReadString();
+            var nodesList = new List<CatalogNode>();
+            ReadSubNodes();
+            file.Close();
+            return nodesList;
+
+            void ReadSubNodes()
             {
-                return new CBackupStream(filename).ReadNodes().ToList();
-            }
-            catch (OperationCanceledException)
-            {
-                return null;
+                nodesList.Add(new CatalogNode()
+                {
+                    Type = (ENodeType)file.ReadInt32(),
+                    Name = file.ReadString(),
+                    Offset = file.ReadInt64()
+                });
+                int count = file.ReadInt32();
+
+                for (int i = 0; i < count; i++)
+                {
+                    ReadSubNodes();
+                }
             }
         }
 

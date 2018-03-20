@@ -251,7 +251,7 @@ namespace BackupReader
             if (ofdCatalog.ShowDialog() == DialogResult.Cancel) return;
 
             tsStatus.Text = "Reading catalog...";
-            var catalogNodes = BackupReader.ReadCatalog(ofdCatalog.FileName, mFile_OnProgressChange, mCancellation.Token);
+            var catalogNodes = BackupReader.ReadCatalog(ofdCatalog.FileName);
             var root = catalogNodes[0];
 
             tvDirs.Nodes.Clear();
