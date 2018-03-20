@@ -10,24 +10,67 @@ namespace BackupReader
 {
     static class CatalogImpl
     {
-        public static IEnumerable<(EBlockType type, CDescriptorBlock block)> ReadBlocks(this CBackupStream stream, ProgressChange reportProgress, CancellationToken cancelToken)
+        public static IEnumerable<(EBlockType type, CDescriptorBlock block)> ReadBlocks(CBackupStream stream, Action<long, long> reportProgress)
         {
             var tapeHeaderDescriptorBlock = stream.ReadDBLK();
             var filemarkDescriptorBlock = stream.ReadDBLK();
             yield return (type: EBlockType.ROOT, block: tapeHeaderDescriptorBlock);
 
-            while (stream.BaseStream.Position + 4 < stream.BaseStream.Length)
+            foreach (var x in ReadBlocksRecursive())
             {
-                EBlockType et = (EBlockType)stream.ReadUInt32();
-                stream.BaseStream.Seek(-4, SeekOrigin.Current);
-                yield return (type: et, block: stream.ReadDBLK());
+                yield return x;
 
-                cancelToken.ThrowIfCancellationRequested();
                 reportProgress(stream.BaseStream.Length, stream.BaseStream.Position);
+            }
+
+            IEnumerable<(EBlockType type, CDescriptorBlock block)> ReadBlocksRecursive()
+            {
+                var blockType = stream.PeekNextBlockType();
+
+                if (blockType != 0)
+                    yield return (type: blockType, block: stream.ReadDBLK());
+                else
+                    yield break;
+
+                foreach (var nextBlock in ReadBlocksRecursive())
+                {
+                    yield return nextBlock;
+                }
             }
         }
 
-        public static IEnumerable<CatalogNode> ReadNodes(this CBackupStream file)
+        public static List<CatalogNode> ReadNodes(this CBackupStream file)
+        {
+            file.ReadString();
+            var nodesList = new List<CatalogNode> { new CatalogNode()
+                {
+                    Type = (ENodeType)file.ReadInt32(),
+                    Name = file.ReadString(),
+                    Offset = file.ReadInt64()
+                }
+            };
+
+            ReadSubNodes(nodesList);
+            return nodesList;
+
+            void ReadSubNodes(List<CatalogNode> list)
+            {
+                int count = file.ReadInt32();
+                list.Add( new CatalogNode()
+                {
+                    Type = (ENodeType)file.ReadInt32(),
+                    Name = file.ReadString(),
+                    Offset = file.ReadInt64()
+                });
+
+                for (int i = 0; i < count; i++)
+                {
+                    ReadSubNodes(list);
+                }
+            }
+        }
+
+        public static IEnumerable<CatalogNode> _ReadNodes(this CBackupStream file)
         {
             file.ReadString();
             var firstNode = new CatalogNode()
@@ -63,13 +106,6 @@ namespace BackupReader
                 }
             }
 
-        }
-
-        public static List<CatalogNode> InvokeOneByType(this Dictionary<EBlockType, Func<CDescriptorBlock, List<CatalogNode>>> factories, EBlockType eBlockType, CDescriptorBlock block)
-        {
-            Func<CDescriptorBlock, List<CatalogNode>> factory;
-            Func<CDescriptorBlock, List<CatalogNode>> defaultFactory = x => new List<CatalogNode>();
-            return (factories.TryGetValue(eBlockType, out factory) ? factory : defaultFactory).Invoke(block);
         }
 
         public static IEnumerable<string> GetFiles(CFileDescriptorBlock fileDescriptorBlock)

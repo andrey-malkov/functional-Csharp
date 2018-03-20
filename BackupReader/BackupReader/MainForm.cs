@@ -32,6 +32,21 @@ namespace BackupReader
                 int progress = (int)(currentPosition / (float)length * 100.0f);
                 tsStatus.Text = "Reading backup file. " + progress + "% completed.";
                 Application.DoEvents();
+                //Thread.Sleep(1);
+            }
+        }
+
+        bool mFile_IfCancellationRequested()
+        {
+            try
+            {
+                mCancellation.Token.ThrowIfCancellationRequested();
+                return false;
+            }
+            catch (OperationCanceledException)
+            {
+                tsStatus.Text = "The operation was canceled.";
+                return true;
             }
         }
 
@@ -93,14 +108,17 @@ namespace BackupReader
                 opencatalogToolStripButton.Enabled = false;
                 savecatalogToolStripButton.Enabled = false;
 
-                var catalogNodes = BackupReader.ReadBackup(mFileName, mFile_OnProgressChange, mCancellation.Token);
-                var root = catalogNodes[0];
+                var catalogNodes = BackupReader.ReadBackup(new CBackupStream(mFileName), mFile_OnProgressChange, mFile_IfCancellationRequested);
+                if (catalogNodes != null)
+                {
+                    var root = catalogNodes[0];
 
-                // Populate tree view
-                tvDirs.Nodes.Clear();
-                tvDirs.Nodes.Add("root", root.Name, 0);
-                tvDirs.Nodes[0].Tag = root;
-                PopulateTreeView(tvDirs.Nodes[0], catalogNodes.GetRange(1, catalogNodes.Count - 1));
+                    // Populate tree view
+                    tvDirs.Nodes.Clear();
+                    tvDirs.Nodes.Add("root", root.Name, 0);
+                    tvDirs.Nodes[0].Tag = root;
+                    PopulateTreeView(tvDirs.Nodes[0], catalogNodes.GetRange(1, catalogNodes.Count - 1));
+                }
                 tsStatus.Text = "Select a single volume, folder or file to extract.";
 
                 // UI cues

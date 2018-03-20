@@ -53,18 +53,24 @@ namespace BackupReader
             return new CDataStream.CStreamHeader(this);
         }
 
+        private bool CheckEndOfFile()
+        {
+            return BaseStream.Position + 4 >= BaseStream.Length;
+        }
+
         /// <summary>
         /// Reads the type of the next desciptor block. Does not advance stream position.
         /// </summary>
         public EBlockType PeekNextBlockType()
         {
-            // Check for EOF
-            if (BaseStream.Position + 4 >= BaseStream.Length)
-                return 0;
+            if (!CheckEndOfFile())
+            {
+                EBlockType et = (EBlockType)ReadUInt32();
+                BaseStream.Seek(-4, System.IO.SeekOrigin.Current);
+                return et;
+            }
 
-            EBlockType et = (EBlockType)ReadUInt32();
-            BaseStream.Seek(-4, System.IO.SeekOrigin.Current);
-            return et;
+            return 0;
         }
 
         /// <summary>
@@ -72,11 +78,8 @@ namespace BackupReader
         /// </summary>
         public string GetNextDataStreamType()
         {
-            // Check for EOF
-            if (BaseStream.Position + 4 >= BaseStream.Length)
-                return "";
-
-            return ReadFixedSizeString(4, EStringType.ANSI);
+            if (!CheckEndOfFile()) return ReadFixedSizeString(4, EStringType.ANSI);
+            return "";
         }
 
         /// <summary>
@@ -218,6 +221,19 @@ namespace BackupReader
             int minute = ((byte4 & 0xF) << 2) + (byte5 >> 6);
             int second = (byte5 & 0x3F);
             return new System.DateTime(year, month, day, hour, minute, second);
+        }
+
+        public IEnumerable<(EBlockType type, CDescriptorBlock data)> ReadBlocks(Func<long, long, bool> shouldContinue)
+        {
+            var tapeHeaderDescriptorBlock = ReadDBLK();
+            var filemarkDescriptorBlock = ReadDBLK();
+            yield return (type: EBlockType.ROOT, data: tapeHeaderDescriptorBlock);
+
+            while (!CheckEndOfFile())
+            {
+                yield return (type: PeekNextBlockType(), data: ReadDBLK());
+                if (!shouldContinue(BaseStream.Length, BaseStream.Position)) yield break;
+            }
         }
 
         public CBackupStream(string Filename)
