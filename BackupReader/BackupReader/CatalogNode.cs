@@ -24,6 +24,15 @@ namespace BackupReader
 
             return builder.ToString();
         }
+
+        public CatalogNode()
+        {
+        }
+
+        public CatalogNode(CDescriptorBlock descriptorBlock)
+        {
+            DescriptorBlock = descriptorBlock;
+        }
     }
 
     class RootCatalogNode : CatalogNode

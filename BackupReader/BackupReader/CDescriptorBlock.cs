@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
+using System.Linq;
 
 namespace BackupReader
 {
@@ -140,7 +141,8 @@ namespace BackupReader
         public byte Reserved5;
         public ushort HeaderChecksum;
 
-        public List<CDataStream> Streams; 
+        public List<CDataStream> Streams;
+        public Encoding EStringTypeEncoding;
 
         /// <summary>
         /// Read block header.
@@ -167,6 +169,16 @@ namespace BackupReader
             StringType = (EStringType)reader.ReadByte();
             Reserved5 = reader.ReadByte();
             HeaderChecksum = reader.ReadUInt16();
+
+            switch(StringType)
+            {
+                case EStringType.ANSI:
+                    EStringTypeEncoding = new ASCIIEncoding();
+                    break;
+                case EStringType.Unicode:
+                    EStringTypeEncoding = new UnicodeEncoding();
+                    break;
+            }
         }
 
         /// <summary>
@@ -199,6 +211,11 @@ namespace BackupReader
         public CDescriptorBlock(CBackupStream reader)
         {
             ReadData(reader);
+        }
+
+        public virtual List<CatalogNode> ToCatalogNodes()
+        {
+            return new List<CatalogNode> { new CatalogNode(this) };
         }
     }
 
@@ -272,7 +289,12 @@ namespace BackupReader
             MTFMajorVersion = backupStream.ReadByte();
             base.ReadStreams(backupStream);
         }
-}
+
+        public override List<CatalogNode> ToCatalogNodes()
+        {
+            return new List<CatalogNode>() { new RootCatalogNode(this) };
+        }
+    }
 
     class CEndOfTapeMarkerDescriptorBlock : CDescriptorBlock 
     {
@@ -358,6 +380,11 @@ namespace BackupReader
             MediaCatalogVersion = backupStream.ReadByte();
             base.ReadStreams(backupStream);
         }
+
+        public override List<CatalogNode> ToCatalogNodes()
+        {
+            return new List<CatalogNode>() { new SetCatalogNode(this) };
+        }
     }
 
     class CEndOfDataSetDescriptorBlock : CDescriptorBlock 
@@ -428,6 +455,11 @@ namespace BackupReader
             MediaWriteDate = backupStream.ReadDate();
             base.ReadStreams(backupStream);
         }
+
+        public override List<CatalogNode> ToCatalogNodes()
+        {
+            return new List<CatalogNode>() { new VolumeCatalogNode(this) };
+        }
     }
 
     // Dummy implementation
@@ -445,6 +477,11 @@ namespace BackupReader
             base.ReadData(backupStream);
             base.ReadStreams(backupStream);
         }
+
+        public override List<CatalogNode> ToCatalogNodes()
+        {
+            return new List<CatalogNode>() { new DBCatalogNode(this) };
+        }
     }
 
     [Flags]
@@ -459,6 +496,35 @@ namespace BackupReader
         DIRE_CORRUPT_BIT = 0x40000,        // This bit set if the data associated with the directory could not be read. BIT18
         // Reserved (set to zero) BIT0 - BIT7, BIT12 - BIT15, BIT19 - BIT23
         // Vendor Specific BIT24 - BIT31
+    }
+
+    static class DescriptorBlockTools
+    {
+        public static string GetTitle(Encoding encoding, CDataStream data)
+        {
+            var title = encoding.GetString(data.Data);
+            return title.Substring(0, title.Length - 1);
+        }
+
+        public static IEnumerable<CDataStream> EnumerateDataStream(CDescriptorBlock descriptorBlock)
+        {
+            foreach (CDataStream data in descriptorBlock.Streams)
+            {
+                yield return data;
+            }
+        }
+
+        public static List<CatalogNode> GetNodesFromStream(CDescriptorBlock descriptorBlock, string streamIDFilter, Func<string, CatalogNode> nodeFactory)
+        {
+            return EnumerateDataStream(descriptorBlock)
+                .Where(d => d.Header.StreamID == streamIDFilter)
+                .Select(d => nodeFactory(GetTitle(descriptorBlock.EStringTypeEncoding, d))).ToList<CatalogNode>();
+        }
+
+        public static List<CatalogNode> GetNodeByName(string title, Func<string, CatalogNode> nodeFactory)
+        {
+            return new List<CatalogNode>() { nodeFactory(title.Substring(0, title.Length - 1) ) };
+        }
     }
 
     class CDirectoryDescriptorBlock : CDescriptorBlock 
@@ -486,7 +552,7 @@ namespace BackupReader
         public DateTime LastAccessDate;
         public uint DirectoryID;
         public string DirectoryName;
-
+        
         public CDirectoryDescriptorBlock(CBackupStream reader)
         {
             base.ReadData(reader);
@@ -499,6 +565,18 @@ namespace BackupReader
             // MTF uses '\0' as the path seperator. Replace them with '\\'
             DirectoryName = reader.ReadString(StartPosition, StringType).Replace('\0','\\');
             base.ReadStreams(reader);
+        }
+
+        public override List<CatalogNode> ToCatalogNodes()
+        {
+            if ((DIRBAttributes & EDIRBAttributes.DIRB_PATH_IN_STREAM_BIT) != 0)
+            {
+                return DescriptorBlockTools.GetNodesFromStream(this, "PNAM", x => new DirectoryCatalogNode(this, x));
+            }
+            else
+            {
+                return DescriptorBlockTools.GetNodeByName(this.DirectoryName, x => new DirectoryCatalogNode(this, x));
+            }
         }
     }
 
@@ -557,6 +635,18 @@ namespace BackupReader
             FileID = backupStream.ReadUInt32();
             FileName = backupStream.ReadString(StartPosition, StringType);
             base.ReadStreams(backupStream);
+        }
+
+        public override List<CatalogNode> ToCatalogNodes()
+        {
+            if ((FileAttributes & EFileAttributes.FILE_NAME_IN_STREAM_BIT) != 0)
+            {
+                return DescriptorBlockTools.GetNodesFromStream(this, "FNAM", x => new FileCatalogNode(this, x));
+            }
+            else
+            {
+                return DescriptorBlockTools.GetNodeByName(this.FileName, x => new FileCatalogNode(this, x));
+            }
         }
     }
 
