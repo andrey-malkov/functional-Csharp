@@ -240,7 +240,7 @@ namespace BackupReader
             var node = (CatalogNode)tvDirs.SelectedNode.Tag;
             if (node == null) return;
 
-            detailsTextBox.Text = node.GetDetailsString();
+            detailsTextBox.Text = node.Details;
             if ((node.Type == ENodeType.Root) || (node.Type == ENodeType.Set)) return;
 
             extractToolStripButton.Enabled = true;

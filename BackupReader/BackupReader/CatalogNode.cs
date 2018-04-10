@@ -7,31 +7,37 @@ namespace BackupReader
 {
     class CatalogNode
     {
-        public string Name { get; set; }
-        public CDescriptorBlock DescriptorBlock { get; set; }
-        public ENodeType Type { get; set; }
-        public long Offset { get; set; }
+        public string Name { get; protected set; }
+        public CDescriptorBlock DescriptorBlock { get; protected set; }
+        public ENodeType Type { get; protected set; }
+        public long Offset { get; protected set; }
 
-        public string GetDetailsString()
+        public CatalogNode() { }
+
+        public CatalogNode(ENodeType type, string name, long offset)
         {
-            var builder = new StringBuilder();
-
-            builder.AppendLine(Name);
-            builder.AppendLine();
-            if(DescriptorBlock != null) { 
-                builder.AppendLine(DescriptorBlock.GetDetailsString());
-            }
-
-            return builder.ToString();
-        }
-
-        public CatalogNode()
-        {
+            Type = type;
+            Name = name;
+            Offset = offset;
         }
 
         public CatalogNode(CDescriptorBlock descriptorBlock)
         {
             DescriptorBlock = descriptorBlock;
+        }
+
+        public string Details
+        {
+            get
+            {
+                var builder = new StringBuilder();
+
+                builder.AppendLine(Name);
+                builder.AppendLine();
+                builder.AppendLine(DescriptorBlock.GetDetailsString());
+
+                return builder.ToString();
+            }
         }
     }
 

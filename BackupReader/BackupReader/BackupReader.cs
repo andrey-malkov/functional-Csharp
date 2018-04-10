@@ -2,7 +2,6 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.IO;
-using static BackupReader.CatalogImpl;
 
 namespace BackupReader
 {
@@ -39,12 +38,7 @@ namespace BackupReader
 
             void ReadSubNodes()
             {
-                nodesList.Add(new CatalogNode()
-                {
-                    Type = (ENodeType)file.ReadInt32(),
-                    Name = file.ReadString(),
-                    Offset = file.ReadInt64()
-                });
+                nodesList.Add(new CatalogNode((ENodeType)file.ReadInt32(), file.ReadString(), file.ReadInt64()));
                 int count = file.ReadInt32();
 
                 for (int i = 0; i < count; i++)
