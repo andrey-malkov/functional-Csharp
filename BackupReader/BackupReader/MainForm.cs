@@ -7,6 +7,7 @@ using System.Text;
 using System.Windows.Forms;
 using System.Diagnostics;
 using System.Threading;
+using System.Linq;
 //using static BackupReader.Catalog;
 
 namespace BackupReader
@@ -14,7 +15,6 @@ namespace BackupReader
     public partial class MainForm : Form
     {
         private string mFileName;
-        private CBackupReader mBackupReader;
         long mLastPosition = 0;
         CancellationTokenSource mCancellation = new CancellationTokenSource();
 
@@ -24,7 +24,7 @@ namespace BackupReader
             InitializeComponent();
         }
 
-        void mFile_OnProgressChange(long length, long currentPosition)
+        private void mFile_OnProgressChange(long length, long currentPosition)
         {
             long increment = length / 100;
             if (currentPosition > mLastPosition + increment)
@@ -36,7 +36,7 @@ namespace BackupReader
             }
         }
 
-        bool mFile_IfCancellationRequested()
+        private bool mFile_IfCancellationRequested()
         {
             try
             {
@@ -47,49 +47,6 @@ namespace BackupReader
             {
                 tsStatus.Text = "The operation was canceled.";
                 return true;
-            }
-        }
-
-
-        private void PopulateTreeView(TreeNode TNode, List<CatalogNode> flatNodes)
-        {
-            TreeNode lastSetNode = null;
-            TreeNode lastVolumeNode = null;
-            TreeNode lastFolderNode = null;
-
-            foreach (var node in flatNodes)
-            {
-                TreeNode snode = new TreeNode(node.Name);
-                switch (node.Type)
-                {
-                    case ENodeType.Set:
-                        lastSetNode = CreateTreeNode(node, 1);
-                        TNode.Nodes.Add(lastSetNode);
-                        break;
-                    case ENodeType.Volume:
-                        lastVolumeNode = CreateTreeNode(node, 2);
-                        lastSetNode.Nodes.Add(lastVolumeNode);
-                        break;
-                    case ENodeType.Folder:
-                        lastFolderNode = CreateTreeNode(node, 3);
-                        lastVolumeNode.Nodes.Add(lastFolderNode);
-                        break;
-                    case ENodeType.File:
-                        lastFolderNode.Nodes.Add(CreateTreeNode(node, 4));
-                        break;
-                    default:
-                        break;
-                }
-            }
-
-            TreeNode CreateTreeNode(CatalogNode node, int index)
-            {
-                return new TreeNode(node.Name)
-                {
-                    ImageIndex = index,
-                    SelectedImageIndex = index,
-                    Tag = node
-                };
             }
         }
 
@@ -117,7 +74,7 @@ namespace BackupReader
                     tvDirs.Nodes.Clear();
                     tvDirs.Nodes.Add("root", root.Name, 0);
                     tvDirs.Nodes[0].Tag = root;
-                    PopulateTreeView(tvDirs.Nodes[0], catalogNodes.GetRange(1, catalogNodes.Count - 1));
+                    PopulateTreeView(tvDirs.Nodes[0], catalogNodes);
                 }
                 tsStatus.Text = "Select a single volume, folder or file to extract.";
 
@@ -131,47 +88,39 @@ namespace BackupReader
             }
         }
 
-        private void PopulateTreeView(TreeNode TNode, CCatalogNode CNode)
+        private static void PopulateTreeView(TreeNode TNode, List<CatalogNode> flatNodes)
         {
-            foreach (CCatalogNode node in CNode.Children)
+            var parent = (CatalogNode)TNode.Tag;
+
+            flatNodes.SkipWhile(node => node != parent)
+                .Skip(1)
+                .TakeWhile(node => (int)node.Type > (int)parent.Type)
+                .Where(node => (int)node.Type == (int)(parent.Type) + 1)
+                .Select(node => new TreeNode(node.Name)
+                {
+                    ImageIndex = (int)node.Type,
+                    SelectedImageIndex = (int)node.Type,
+                    Tag = node
+                }).ToList()
+                .ForEach(tn => {
+                    TNode.Nodes.Add(tn);
+                    PopulateTreeView(tn, flatNodes);
+                });
+        }
+
+        private static List<CatalogNode> GetAllNodes(TreeNode treeNode)
+        {
+            var nodes = new List<CatalogNode>() { (CatalogNode)treeNode.Tag };
+            nodes.AddRange(treeNode.Nodes.Cast<TreeNode>().SelectMany<TreeNode, CatalogNode>(tn => GetNodeBranch(tn)).ToList());
+            return nodes;
+
+            IEnumerable<CatalogNode> GetNodeBranch(TreeNode tn)
             {
-                TreeNode snode = new TreeNode(node.Name);
-                if (node.Type == ENodeType.Set)
-                {
-                    snode.ImageIndex = 1;
-                    snode.SelectedImageIndex = 1;
-                    snode.Tag = node;
-                    TNode.Nodes.Add(snode);
-                }
-                else if (node.Type == ENodeType.Volume)
-                {
-                    snode.ImageIndex = 2;
-                    snode.SelectedImageIndex = 2;
-                    snode.Tag = node;
-                    TNode.Nodes.Add(snode);
-                }
-                else if (node.Type == ENodeType.Folder)
-                {
-                    snode.ImageIndex = 3;
-                    snode.SelectedImageIndex = 3;
-                    snode.Tag = node;
-                    TNode.Nodes.Add(snode);
-                }
-                else if (node.Type == ENodeType.File)
-                {
-                    snode.ImageIndex = 4;
-                    snode.SelectedImageIndex = 4;
-                    snode.Tag = node;
-                    TNode.Nodes.Add(snode);
-                }
-                else if (node.Type == ENodeType.Database)
-                {
-                    snode.ImageIndex = 3;
-                    snode.SelectedImageIndex = 3;
-                    snode.Tag = node;
-                    TNode.Nodes.Add(snode);
-                }
-                PopulateTreeView(snode, node);
+                yield return (CatalogNode)tn.Tag;
+
+                foreach (TreeNode child in tn.Nodes)
+                    foreach (var childChild in GetNodeBranch(child))
+                        yield return childChild;
             }
         }
 
@@ -180,7 +129,7 @@ namespace BackupReader
             if (tvDirs.SelectedNode == null) return;
 
             // Get the selected catalog node from tree node tag
-            CCatalogNode node = (CCatalogNode)tvDirs.SelectedNode.Tag;
+            CatalogNode node = (CatalogNode)tvDirs.SelectedNode.Tag;
             if (node == null) return;
             if ((node.Type == ENodeType.Root) || (node.Type == ENodeType.Set)) return;
 
@@ -189,7 +138,7 @@ namespace BackupReader
             string TargetPath = fbdBackup.SelectedPath;
 
             // Extract the selected node and child nodes
-            node.ExtractTo(mBackupReader, TargetPath);
+            BackupReader.ExtractCatalog(GetAllNodes(tvDirs.SelectedNode), TargetPath);
         }
 
         private void tvDirs_NodeMouseDoubleClick(object sender, TreeNodeMouseClickEventArgs e)
@@ -197,13 +146,13 @@ namespace BackupReader
             if (e.Button != MouseButtons.Left) return;
 
             // Get the selected catalog node from tree node tag
-            CCatalogNode node = (CCatalogNode)tvDirs.SelectedNode.Tag;
+            CatalogNode node = (CatalogNode)tvDirs.SelectedNode.Tag;
             if (node == null) return;
             if (node.Type != ENodeType.File) return;
 
             // Extract the selected node to a temporary folder
             string TargetPath = System.IO.Path.GetTempPath();
-            node.ExtractTo(mBackupReader, TargetPath);
+            BackupReader.ExtractCatalog(GetAllNodes(tvDirs.SelectedNode), TargetPath);
 
             // Open the file
             System.Diagnostics.ProcessStartInfo psi = new System.Diagnostics.ProcessStartInfo(TargetPath + node.Name);
@@ -214,7 +163,7 @@ namespace BackupReader
             {
                 System.Diagnostics.Process.Start(psi);
             }
-            catch(Win32Exception ex)
+            catch (Win32Exception ex)
             {
                 MessageBox.Show(this, "Could not open the file '" + node.Name + "'." + ex.ToString(), "Backup Reader", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
@@ -222,7 +171,7 @@ namespace BackupReader
 
         private void frmMain_FormClosed(object sender, FormClosedEventArgs e)
         {
-            if (mBackupReader != null) mBackupReader.Close();
+            
         }
 
         private void cancelToolStripButton_Click(object sender, EventArgs e)
@@ -273,7 +222,7 @@ namespace BackupReader
             if (sfdCatalog.ShowDialog() == DialogResult.Cancel) return;
 
             // Save the catalog to the file
-            CCatalogNode.SaveCatalog(sfdCatalog.FileName, (CCatalogNode)tvDirs.Nodes[0].Tag, mFileName);
+            BackupReader.SaveCatalog(sfdCatalog.FileName, GetAllNodes(tvDirs.SelectedNode), mFileName);
         }
 
         private void ofdCatalog_FileOk(object sender, CancelEventArgs e)

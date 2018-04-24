@@ -5,6 +5,16 @@ using System.Text;
 
 namespace BackupReader
 {
+    enum ENodeType : int
+    {
+        Root = 0,
+        Set = 1,
+        Volume = 2,
+        Folder = 3,
+        File = 4,
+        Database = 5
+    }
+
     class CatalogNode
     {
         public string Name { get; protected set; }

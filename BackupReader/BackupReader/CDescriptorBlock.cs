@@ -143,6 +143,7 @@ namespace BackupReader
 
         public List<CDataStream> Streams;
         public Encoding EStringTypeEncoding;
+        protected CBackupStream BackupStream;
 
         /// <summary>
         /// Read block header.
@@ -210,12 +211,24 @@ namespace BackupReader
 
         public CDescriptorBlock(CBackupStream reader)
         {
+            BackupStream = reader;
             ReadData(reader);
         }
 
         public virtual List<CatalogNode> ToCatalogNodes()
         {
             return new List<CatalogNode> { new CatalogNode(this) };
+        }
+
+        public virtual string Dump(CDescriptorBlock parent, string targetPath)
+        {
+            if (!Directory.Exists(targetPath))
+            {
+                DirectoryInfo dirInfo = Directory.CreateDirectory(targetPath);
+                return dirInfo.FullName;
+            }
+
+            return targetPath;
         }
     }
 
@@ -293,6 +306,11 @@ namespace BackupReader
         public override List<CatalogNode> ToCatalogNodes()
         {
             return new List<CatalogNode>() { new RootCatalogNode(this) };
+        }
+
+        public override string Dump(CDescriptorBlock parent, string targetPath)
+        {
+            return targetPath;
         }
     }
 
@@ -385,6 +403,11 @@ namespace BackupReader
         {
             return new List<CatalogNode>() { new SetCatalogNode(this) };
         }
+
+        public override string Dump(CDescriptorBlock parent, string targetPath)
+        {
+            return targetPath;
+        }
     }
 
     class CEndOfDataSetDescriptorBlock : CDescriptorBlock 
@@ -460,6 +483,11 @@ namespace BackupReader
         {
             return new List<CatalogNode>() { new VolumeCatalogNode(this) };
         }
+
+        public override string Dump(CDescriptorBlock parent, string targetPath)
+        {
+            return targetPath;
+        }
     }
 
     // Dummy implementation
@@ -481,6 +509,11 @@ namespace BackupReader
         public override List<CatalogNode> ToCatalogNodes()
         {
             return new List<CatalogNode>() { new DBCatalogNode(this) };
+        }
+
+        public override string Dump(CDescriptorBlock parent, string targetPath)
+        {
+            return targetPath;
         }
     }
 
@@ -524,6 +557,18 @@ namespace BackupReader
         public static List<CatalogNode> GetNodeByName(string title, Func<string, CatalogNode> nodeFactory)
         {
             return new List<CatalogNode>() { nodeFactory(title.Substring(0, title.Length - 1) ) };
+        }
+
+        public static string ValidateFileName(string path)
+        {
+            return new string(path.Where(x => !Path.GetInvalidFileNameChars().Contains(x)).ToArray());
+        }
+
+        public static string ValidatePath(string path)
+        {
+            //return new string(path.Where(x => !Path.GetInvalidPathChars().Contains(x)).ToArray());
+            var dirs = Path.GetDirectoryName(path);
+            return dirs.Split('\\').Last();
         }
     }
 
@@ -577,6 +622,12 @@ namespace BackupReader
             {
                 return DescriptorBlockTools.GetNodeByName(this.DirectoryName, x => new DirectoryCatalogNode(this, x));
             }
+        }
+
+        public override string Dump(CDescriptorBlock parent, string targetPath)
+        {
+            var validDirectoryName = DescriptorBlockTools.ValidatePath(DirectoryName);
+            return base.Dump(parent, Path.Combine(targetPath, validDirectoryName));
         }
     }
 
@@ -647,6 +698,25 @@ namespace BackupReader
             {
                 return DescriptorBlockTools.GetNodeByName(this.FileName, x => new FileCatalogNode(this, x));
             }
+        }
+
+        public override string Dump(CDescriptorBlock parent, string targetPath)
+        {
+
+            base.Dump(parent, targetPath);
+            
+            var fileName = Path.Combine(targetPath, FileName);
+            var file = new FileStream(fileName, FileMode.Create);
+
+            foreach (CDataStream data in this.Streams)
+            {
+                if (data.Header.StreamID == "STAN")
+                {
+                    file.Write(data.Data, 0, data.Data.Length);
+                }
+            }
+            file.Close();
+            return fileName;
         }
     }
 

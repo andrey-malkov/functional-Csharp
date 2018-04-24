@@ -47,5 +47,45 @@ namespace BackupReader
                 }
             }
         }
+
+        public static void ExtractCatalog(List<CatalogNode> nodes, string targetPath)
+        {
+            var parentNode = nodes[0];
+            var parentNodePath = parentNode.DescriptorBlock.Dump(null, targetPath);
+            PopulateFileSystem(parentNode, parentNodePath);
+
+            void PopulateFileSystem(CatalogNode parent, string parentPath)
+            {
+                nodes.SkipWhile(node => node != parent)
+                    .Skip(1)
+                    .TakeWhile(node => (int)node.Type > (int)parent.Type)
+                    .Where(node => (int)node.Type == (int)(parent.Type) + 1)
+                    .ToList()
+                    .ForEach(node => {
+                        var path = node.DescriptorBlock.Dump(parent.DescriptorBlock, parentPath);
+                        PopulateFileSystem(node, path);
+                    });
+            }
+        }
+
+        /// <summary>
+        /// Saves the catalog to the disk.
+        /// </summary>
+        public static void SaveCatalog(string Filename, List<CatalogNode> Nodes, string BackupFilename)
+        {
+            BinaryWriter file = new BinaryWriter(new FileStream(Filename, FileMode.Create, FileAccess.Write));
+
+            // Write full path to backup file
+            file.Write(BackupFilename);
+
+            // Write nodes
+            Nodes.ForEach(node => {
+                file.Write((int)node.Type);
+                file.Write(node.Name);
+                file.Write(node.Offset);
+            });
+
+            file.Close();
+        }
     }
 }
