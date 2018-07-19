@@ -53,6 +53,11 @@ namespace BackupReader
             return new CDataStream.CStreamHeader(this);
         }
 
+        private bool CheckEndOfFile()
+        {
+            return BaseStream.Position + 4 >= BaseStream.Length;
+        }
+
         /// <summary>
         /// Reads the type of the next desciptor block. Does not advance stream position.
         /// </summary>
@@ -224,6 +229,18 @@ namespace BackupReader
             : base (new System.IO.FileStream(Filename, System.IO.FileMode.Open, System.IO.FileAccess.Read))
         {
 
+        }
+
+        public IEnumerable<(EBlockType type, CDescriptorBlock data)> ReadBlocks()
+        {
+            var tapeHeaderDescriptorBlock = ReadDBLK();
+            var filemarkDescriptorBlock = ReadDBLK();
+            yield return (type: EBlockType.MTF_TAPE, data: tapeHeaderDescriptorBlock);
+
+            while (!CheckEndOfFile())
+            {
+                yield return (type: PeekNextBlockType(), data: ReadDBLK());
+            }
         }
 
         ~CBackupStream()

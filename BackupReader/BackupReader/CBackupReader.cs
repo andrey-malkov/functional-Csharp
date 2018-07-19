@@ -1,4 +1,6 @@
 
+using System.Linq;
+
 namespace BackupReader
 {
     /// <summary>
@@ -40,43 +42,33 @@ namespace BackupReader
             // Set to true to cancel reading
             mCancel = false;
 
-            // Read the media header
-            var tapeHeaderDescriptorBlock = (CTapeHeaderDescriptorBlock)mStream.ReadDBLK();
-            
-            // Read soft file mark
-            var filemarkDescriptorBlock = (CSoftFilemarkDescriptorBlock)mStream.ReadDBLK();
-            
-            // Create the root catalog node
-            var node = new CCatalogNode(tapeHeaderDescriptorBlock, tapeHeaderDescriptorBlock.MediaName, ENodeType.Root);
-
+            CCatalogNode node = null;
             CCatalogNode lastSetNode = null;
             CCatalogNode lastVolumeNode = null;
             CCatalogNode lastFolderNode = null;
 
-            // Get next block type
-            var blockType = mStream.PeekNextBlockType();
-            
-            while ((blockType != EBlockType.MTF_EOTM) && (blockType != 0) && (mCancel == false))
+            mStream.ReadBlocks().Where(block => (block.type != EBlockType.MTF_EOTM)).ToList().ForEach(block =>
             {
-                // Read next block
-                var block = mStream.ReadDBLK();
-                
-                // Add to catalog
-                if (blockType == EBlockType.MTF_SSET)
+                if (block.type == EBlockType.MTF_TAPE)
                 {
-                    var dataSetDescriptorBlock = (CStartOfDataSetDescriptorBlock)block;
+                    var tapeHeaderDescriptorBlock = (CTapeHeaderDescriptorBlock)block.data;
+                    node = new CCatalogNode(tapeHeaderDescriptorBlock, tapeHeaderDescriptorBlock.MediaName, ENodeType.Root);
+                }
+                else if (block.type == EBlockType.MTF_SSET)
+                {
+                    var dataSetDescriptorBlock = (CStartOfDataSetDescriptorBlock)block.data;
                     var cnode = node.AddSet(dataSetDescriptorBlock);
                     lastSetNode = cnode;
                 }
-                else if (blockType == EBlockType.MTF_VOLB)
+                else if (block.type == EBlockType.MTF_VOLB)
                 {
-                    var volumeDescriptorBlock = (CVolumeDescriptorBlock)block;
+                    var volumeDescriptorBlock = (CVolumeDescriptorBlock)block.data;
                     var cnode = lastSetNode.AddVolume(volumeDescriptorBlock);
                     lastVolumeNode = cnode;
                 }
-                else if (blockType == EBlockType.MTF_DIRB)
+                else if (block.type == EBlockType.MTF_DIRB)
                 {
-                    var directoryDescriptorBlock = (CDirectoryDescriptorBlock)block;
+                    var directoryDescriptorBlock = (CDirectoryDescriptorBlock)block.data;
 
                     // Check if the directory name is contained in a data stream
                     CCatalogNode cnode = null;
@@ -112,10 +104,10 @@ namespace BackupReader
 
                     if (cnode != null) lastFolderNode = cnode;
                 }
-                else if (blockType == EBlockType.MTF_FILE)
+                else if (block.type == EBlockType.MTF_FILE)
                 {
-                    var fileDescriptorBlock = (CFileDescriptorBlock)block;
-                    
+                    var fileDescriptorBlock = (CFileDescriptorBlock)block.data;
+
                     // Check if the file name is contained in a data stream
                     CCatalogNode cnode = null;
                     if ((fileDescriptorBlock.FileAttributes & EFileAttributes.FILE_NAME_IN_STREAM_BIT) != 0)
@@ -145,16 +137,13 @@ namespace BackupReader
                         lastFolderNode.AddFile(fileDescriptorBlock, fileDescriptorBlock.FileName);
                     }
                 }
-                else if (blockType == EBlockType.MTF_DBDB)
+                else if (block.type == EBlockType.MTF_DBDB)
                 {
-                    var databaseDescriptorBlock = (CDatabaseDescriptorBlock)block;
+                    var databaseDescriptorBlock = (CDatabaseDescriptorBlock)block.data;
                     var cnode = lastVolumeNode.AddDatabase(databaseDescriptorBlock);
                     //lastVolumeNode = cnode;
                 }
 
-
-                // Get next block type
-                blockType = mStream.PeekNextBlockType();
 
                 // Check progress
                 if (mStream.BaseStream.Position > mLastPos + mIncrement)
@@ -162,7 +151,7 @@ namespace BackupReader
                     mLastPos = mStream.BaseStream.Position;
                     OnProgressChange((int)(mLastPos / (float)mStream.BaseStream.Length * 100.0f));
                 }
-            }
+            });
 
             return node;
         }
