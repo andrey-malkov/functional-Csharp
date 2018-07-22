@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text;
 
 namespace BackupReader
@@ -139,7 +140,8 @@ namespace BackupReader
         public byte Reserved5;
         public ushort HeaderChecksum;
 
-        public List<CDataStream> Streams; 
+        public List<CDataStream> Streams;
+        protected Encoding EStringTypeEncoding;
 
         /// <summary>
         /// Read block header.
@@ -166,6 +168,16 @@ namespace BackupReader
             StringType = (EStringType)reader.ReadByte();
             Reserved5 = reader.ReadByte();
             HeaderChecksum = reader.ReadUInt16();
+
+            switch (StringType)
+            {
+                case EStringType.ANSI:
+                    EStringTypeEncoding = new ASCIIEncoding();
+                    break;
+                case EStringType.Unicode:
+                    EStringTypeEncoding = new UnicodeEncoding();
+                    break;
+            }
         }
 
         /// <summary>
@@ -485,6 +497,13 @@ namespace BackupReader
         public DateTime LastAccessDate;
         public uint DirectoryID;
         public string DirectoryName;
+        public IEnumerable<string> DirectoriesName
+        {
+            get
+            {
+                return GetDirectories();
+            }
+        }
 
         public CDirectoryDescriptorBlock(CBackupStream reader)
         {
@@ -498,6 +517,28 @@ namespace BackupReader
             // MTF uses '\0' as the path seperator. Replace them with '\\'
             DirectoryName = reader.ReadString(StartPosition, StringType).Replace('\0','\\');
             base.ReadStreams(reader);
+        }
+
+        private IEnumerable<string> GetDirectories()
+        {
+            if ((this.DIRBAttributes & EDIRBAttributes.DIRB_PATH_IN_STREAM_BIT) != 0)
+            {
+                foreach (CDataStream data in this.Streams)
+                {
+                    if (data.Header.StreamID == "PNAM")
+                        yield return GetTitle(this.EStringTypeEncoding, data);
+                }
+            }
+            else
+            {
+                yield return this.DirectoryName.Substring(0, this.DirectoryName.Length - 1);
+            }
+
+            string GetTitle(Encoding encoding, CDataStream data)
+            {
+                var title = encoding.GetString(data.Data);
+                return title.Substring(0, title.Length - 1);
+            }
         }
     }
 
@@ -543,6 +584,13 @@ namespace BackupReader
         public uint DirectoryID;
         public uint FileID;
         public string FileName;
+        public IEnumerable<string> FilesName
+        {
+            get
+            {
+                return GetFiles();
+            }
+        }
 
         public CFileDescriptorBlock(CBackupStream backupStream)
         {
@@ -556,6 +604,28 @@ namespace BackupReader
             FileID = backupStream.ReadUInt32();
             FileName = backupStream.ReadString(StartPosition, StringType);
             base.ReadStreams(backupStream);
+        }
+
+        private IEnumerable<string> GetFiles()
+        {
+            if ((this.FileAttributes & EFileAttributes.FILE_NAME_IN_STREAM_BIT) != 0)
+            {
+                foreach (CDataStream data in this.Streams)
+                {
+                    if (data.Header.StreamID == "FNAM")
+                        yield return GetTitle(this.EStringTypeEncoding, data);
+                }
+            }
+            else
+            {
+                yield return this.FileName;
+            }
+
+            string GetTitle(Encoding encoding, CDataStream data)
+            {
+                var title = encoding.GetString(data.Data);
+                return title.Substring(0, title.Length - 1);
+            }
         }
     }
 

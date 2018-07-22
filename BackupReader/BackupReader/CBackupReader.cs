@@ -72,35 +72,8 @@ namespace BackupReader
 
                     // Check if the directory name is contained in a data stream
                     CCatalogNode cnode = null;
-                    if ((directoryDescriptorBlock.DIRBAttributes & EDIRBAttributes.DIRB_PATH_IN_STREAM_BIT) != 0)
-                    {
-                        foreach (CDataStream data in directoryDescriptorBlock.Streams)
-                        {
-                            if (data.Header.StreamID == "PNAM")
-                            {
-                                if (directoryDescriptorBlock.StringType == EStringType.ANSI)
-                                {
-                                    System.Text.ASCIIEncoding encoding = new System.Text.ASCIIEncoding();
-                                    var folderName = encoding.GetString(data.Data);
-                                    folderName = folderName.Substring(0, folderName.Length - 1);
-                                    cnode = lastVolumeNode.AddFolder(directoryDescriptorBlock, folderName);
-                                }
-                                else if (directoryDescriptorBlock.StringType == EStringType.Unicode)
-                                {
-                                    System.Text.UnicodeEncoding encoding = new System.Text.UnicodeEncoding();
-                                    var folderName = encoding.GetString(data.Data);
-                                    folderName = folderName.Substring(0, folderName.Length - 1);
-                                    cnode = lastVolumeNode.AddFolder(directoryDescriptorBlock, folderName);
-                                }
-
-                            }
-                        }
-                    }
-                    else
-                    {
-                        var folderName = directoryDescriptorBlock.DirectoryName.Substring(0, directoryDescriptorBlock.DirectoryName.Length - 1);
-                        cnode = lastVolumeNode.AddFolder(directoryDescriptorBlock, folderName);
-                    }
+                    directoryDescriptorBlock.DirectoriesName.ToList()
+                        .ForEach(f => cnode = lastVolumeNode.AddFolder(directoryDescriptorBlock, f));
 
                     if (cnode != null) lastFolderNode = cnode;
                 }
@@ -110,32 +83,8 @@ namespace BackupReader
 
                     // Check if the file name is contained in a data stream
                     CCatalogNode cnode = null;
-                    if ((fileDescriptorBlock.FileAttributes & EFileAttributes.FILE_NAME_IN_STREAM_BIT) != 0)
-                    {
-                        foreach (var data in fileDescriptorBlock.Streams)
-                        {
-                            if (data.Header.StreamID == "FNAM")
-                            {
-                                if (fileDescriptorBlock.StringType == EStringType.ANSI)
-                                {
-                                    System.Text.ASCIIEncoding encoding = new System.Text.ASCIIEncoding();
-                                    var fileName = encoding.GetString(data.Data);
-                                    lastFolderNode.AddFile(fileDescriptorBlock, fileName);
-                                }
-                                else if (fileDescriptorBlock.StringType == EStringType.Unicode)
-                                {
-                                    System.Text.UnicodeEncoding encoding = new System.Text.UnicodeEncoding();
-                                    var fileName = encoding.GetString(data.Data);
-                                    lastFolderNode.AddFile(fileDescriptorBlock, fileName);
-                                }
-
-                            }
-                        }
-                    }
-                    else
-                    {
-                        lastFolderNode.AddFile(fileDescriptorBlock, fileDescriptorBlock.FileName);
-                    }
+                    fileDescriptorBlock.FilesName.ToList()
+                        .ForEach(f => cnode = lastFolderNode.AddFile(fileDescriptorBlock, f));
                 }
                 else if (block.type == EBlockType.MTF_DBDB)
                 {
