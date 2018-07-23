@@ -47,60 +47,43 @@ namespace BackupReader
             CCatalogNode lastVolumeNode = null;
             CCatalogNode lastFolderNode = null;
 
-            mStream.ReadBlocks().Where(block => (block.type != EBlockType.MTF_EOTM)).ToList().ForEach(block =>
-            {
-                if (block.type == EBlockType.MTF_TAPE)
+            mStream.ReadBlocks().Where(block => (!(block.data is CEndOfTapeMarkerDescriptorBlock))).ToList()
+                .ForEach(block =>
                 {
-                    var tapeHeaderDescriptorBlock = (CTapeHeaderDescriptorBlock)block.data;
-                    node = new CCatalogNode(tapeHeaderDescriptorBlock, tapeHeaderDescriptorBlock.MediaName, ENodeType.Root);
-                }
-                else if (block.type == EBlockType.MTF_SSET)
-                {
-                    var dataSetDescriptorBlock = (CStartOfDataSetDescriptorBlock)block.data;
-                    var cnode = node.AddSet(dataSetDescriptorBlock);
-                    lastSetNode = cnode;
-                }
-                else if (block.type == EBlockType.MTF_VOLB)
-                {
-                    var volumeDescriptorBlock = (CVolumeDescriptorBlock)block.data;
-                    var cnode = lastSetNode.AddVolume(volumeDescriptorBlock);
-                    lastVolumeNode = cnode;
-                }
-                else if (block.type == EBlockType.MTF_DIRB)
-                {
-                    var directoryDescriptorBlock = (CDirectoryDescriptorBlock)block.data;
+                    switch (block.data)
+                    {
+                        case CTapeHeaderDescriptorBlock tapeHeaderDescriptorBlock:
+                            node = new CCatalogNode(tapeHeaderDescriptorBlock, tapeHeaderDescriptorBlock.MediaName, ENodeType.Root);
+                            break;
+                        case CStartOfDataSetDescriptorBlock dataSetDescriptorBlock:
+                            lastSetNode = node.AddSet(dataSetDescriptorBlock);
+                            break;
+                        case CVolumeDescriptorBlock volumeDescriptorBlock:
+                            lastVolumeNode = lastSetNode.AddVolume(volumeDescriptorBlock);
+                            break;
+                        case CDatabaseDescriptorBlock databaseDescriptorBlock:
+                            lastVolumeNode.AddDatabase(databaseDescriptorBlock);
+                            break;
+                        case CDirectoryDescriptorBlock directoryDescriptorBlock:
+                            CCatalogNode directoryNode = null;
+                            directoryDescriptorBlock.DirectoriesName.ToList()
+                                .ForEach(f => directoryNode = lastVolumeNode.AddFolder(directoryDescriptorBlock, f));
 
-                    // Check if the directory name is contained in a data stream
-                    CCatalogNode cnode = null;
-                    directoryDescriptorBlock.DirectoriesName.ToList()
-                        .ForEach(f => cnode = lastVolumeNode.AddFolder(directoryDescriptorBlock, f));
+                            if (directoryNode != null) lastFolderNode = directoryNode;
+                            break;
+                        case CFileDescriptorBlock fileDescriptorBlock:
+                            fileDescriptorBlock.FilesName.ToList()
+                                .ForEach(f => lastFolderNode.AddFile(fileDescriptorBlock, f));
+                            break;
+                    }
 
-                    if (cnode != null) lastFolderNode = cnode;
-                }
-                else if (block.type == EBlockType.MTF_FILE)
-                {
-                    var fileDescriptorBlock = (CFileDescriptorBlock)block.data;
-
-                    // Check if the file name is contained in a data stream
-                    CCatalogNode cnode = null;
-                    fileDescriptorBlock.FilesName.ToList()
-                        .ForEach(f => cnode = lastFolderNode.AddFile(fileDescriptorBlock, f));
-                }
-                else if (block.type == EBlockType.MTF_DBDB)
-                {
-                    var databaseDescriptorBlock = (CDatabaseDescriptorBlock)block.data;
-                    var cnode = lastVolumeNode.AddDatabase(databaseDescriptorBlock);
-                    //lastVolumeNode = cnode;
-                }
-
-
-                // Check progress
-                if (mStream.BaseStream.Position > mLastPos + mIncrement)
-                {
-                    mLastPos = mStream.BaseStream.Position;
-                    OnProgressChange((int)(mLastPos / (float)mStream.BaseStream.Length * 100.0f));
-                }
-            });
+                    // Check progress
+                    if (mStream.BaseStream.Position > mLastPos + mIncrement)
+                    {
+                        mLastPos = mStream.BaseStream.Position;
+                        OnProgressChange((int)(mLastPos / (float)mStream.BaseStream.Length * 100.0f));
+                    }
+                });
 
             return node;
         }
