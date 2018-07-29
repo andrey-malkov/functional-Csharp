@@ -1,4 +1,5 @@
 
+using System;
 using System.Linq;
 
 namespace BackupReader
@@ -14,17 +15,6 @@ namespace BackupReader
         private CBackupStream mStream;
 
         /// <summary>
-        /// Provides an event handler for the OnProgressChange event. 
-        /// Progress is an integer between 1-100, representing the progress of
-        /// the catalog read operation.
-        /// </summary>
-        public delegate void ProgressChange(int Progress);
-        /// <summary>
-        /// Occurs when the catalog read progress changes by 1%.
-        /// </summary>
-        public event ProgressChange OnProgressChange;
-
-        /// <summary>
         /// Returns the underlying stream.
         /// </summary>
         public CBackupStream Stream
@@ -37,7 +27,7 @@ namespace BackupReader
         /// The root node contains backup sets/volumes/directories/files
         /// as child nodes.
         /// </summary>
-        public CCatalogNode ReadCatalog()
+        public CCatalogNode ReadCatalog(Action<long, long> onProgressChange)
         {
             // Set to true to cancel reading
             mCancel = false;
@@ -47,7 +37,7 @@ namespace BackupReader
             CCatalogNode lastVolumeNode = null;
             CCatalogNode lastFolderNode = null;
 
-            mStream.ReadBlocks().Where(block => (!(block.data is CEndOfTapeMarkerDescriptorBlock))).ToList()
+            mStream.ReadBlocks(onProgressChange).Where(block => (!(block.data is CEndOfTapeMarkerDescriptorBlock))).ToList()
                 .ForEach(block =>
                 {
                     switch (block.data)
@@ -75,13 +65,6 @@ namespace BackupReader
                             fileDescriptorBlock.FilesName.ToList()
                                 .ForEach(f => lastFolderNode.AddFile(fileDescriptorBlock, f));
                             break;
-                    }
-
-                    // Check progress
-                    if (mStream.BaseStream.Position > mLastPos + mIncrement)
-                    {
-                        mLastPos = mStream.BaseStream.Position;
-                        OnProgressChange((int)(mLastPos / (float)mStream.BaseStream.Length * 100.0f));
                     }
                 });
 

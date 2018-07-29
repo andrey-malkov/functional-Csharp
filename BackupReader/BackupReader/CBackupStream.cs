@@ -231,7 +231,7 @@ namespace BackupReader
 
         }
 
-        public IEnumerable<(EBlockType type, CDescriptorBlock data)> ReadBlocks()
+        public IEnumerable<(EBlockType type, CDescriptorBlock data)> ReadBlocks(Action<long, long> onProgressChange)
         {
             var tapeHeaderDescriptorBlock = ReadDBLK();
             var filemarkDescriptorBlock = ReadDBLK();
@@ -240,6 +240,7 @@ namespace BackupReader
             while (!CheckEndOfFile())
             {
                 yield return (type: PeekNextBlockType(), data: ReadDBLK());
+                onProgressChange(BaseStream.Length, BaseStream.Position);
             }
         }
 

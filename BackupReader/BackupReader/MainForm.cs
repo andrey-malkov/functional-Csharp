@@ -5,6 +5,7 @@ using System.Data;
 using System.Drawing;
 using System.Text;
 using System.Windows.Forms;
+using System.Threading;
 
 namespace BackupReader
 {
@@ -16,6 +17,26 @@ namespace BackupReader
         public MainForm()
         {
             InitializeComponent();
+        }
+
+        private CCatalogNode ReadCatalog(string fileName)
+        {
+            var stream = new CBackupStream(fileName);
+            if (mBackupReader != null) mBackupReader.Close();
+            mBackupReader = new CBackupReader(mFileName);
+            long lastPosition = 0;
+            return mBackupReader.ReadCatalog((length, currentPosition) =>
+            {
+                long increment = length / 100;
+                if (currentPosition > lastPosition + increment)
+                {
+                    lastPosition = currentPosition;
+                    int progress = (int)(currentPosition / (float)length * 100.0f);
+                    tsStatus.Text = "Reading backup file. " + progress + "% completed.";
+                    Application.DoEvents();
+                    Thread.Sleep(10);
+                }
+            });
         }
 
         private void openToolStripButton_Click(object sender, EventArgs e)
@@ -34,11 +55,8 @@ namespace BackupReader
                 savecatalogToolStripButton.Enabled = false;
 
                 // Open and read the catalog
-                if (mBackupReader != null) mBackupReader.Close();
-                mBackupReader = new CBackupReader(mFileName);
-                mBackupReader.OnProgressChange += mFile_OnProgressChange;
-                var rootNode = mBackupReader.ReadCatalog();
-                
+                var rootNode = ReadCatalog(mFileName);
+
                 // Populate tree view
                 tvDirs.Nodes.Clear();
                 tvDirs.Nodes.Add("root", rootNode.Name, 0);
@@ -148,12 +166,6 @@ namespace BackupReader
         private void frmMain_FormClosed(object sender, FormClosedEventArgs e)
         {
             if (mBackupReader != null) mBackupReader.Close();
-        }
-
-        void mFile_OnProgressChange(int progress)
-        {
-            tsStatus.Text = "Reading backup file. " + progress + "% completed.";
-            Application.DoEvents();
         }
 
         private void cancelToolStripButton_Click(object sender, EventArgs e)
