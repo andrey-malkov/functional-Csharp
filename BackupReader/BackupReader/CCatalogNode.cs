@@ -116,7 +116,7 @@ namespace BackupReader
             return cnode;
         }
 
-        public bool ExtractTo(CBackupReader backupFile, string targetPath)
+        public bool ExtractTo(CBackupStream backupFile, string targetPath)
         {
             // Ensure that the target path has a trailing '\'
             if (targetPath[targetPath.Length - 1] != '\\')
@@ -143,9 +143,9 @@ namespace BackupReader
             {
                 // Create the target directory if it does not exist
                 System.IO.Directory.CreateDirectory(targetPath);
-                backupFile.Stream.BaseStream.Seek(mOffset, System.IO.SeekOrigin.Begin);
+                backupFile.BaseStream.Seek(mOffset, System.IO.SeekOrigin.Begin);
                 var file = new System.IO.FileStream(targetPath + mName, System.IO.FileMode.Create);
-                var fileDescriptorBlock = (CFileDescriptorBlock)backupFile.Stream.ReadDBLK();
+                var fileDescriptorBlock = (CFileDescriptorBlock)backupFile.ReadDBLK();
                 foreach (var data in fileDescriptorBlock.Streams)
                 {
                     if (data.Header.StreamID == "STAN")

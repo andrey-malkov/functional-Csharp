@@ -12,8 +12,7 @@ namespace BackupReader
     public partial class MainForm : Form
     {
         private string mFileName;
-        private CBackupReader mBackupReader;
-
+        
         public MainForm()
         {
             InitializeComponent();
@@ -21,22 +20,32 @@ namespace BackupReader
 
         private CCatalogNode ReadCatalog(string fileName)
         {
-            var stream = new CBackupStream(fileName);
-            if (mBackupReader != null) mBackupReader.Close();
-            mBackupReader = new CBackupReader(mFileName);
-            long lastPosition = 0;
-            return mBackupReader.ReadCatalog((length, currentPosition) =>
+            bool cancel = false;
+            cancelToolStripButton.Click += new EventHandler((sender, e) =>
             {
-                long increment = length / 100;
-                if (currentPosition > lastPosition + increment)
-                {
-                    lastPosition = currentPosition;
-                    int progress = (int)(currentPosition / (float)length * 100.0f);
-                    tsStatus.Text = "Reading backup file. " + progress + "% completed.";
-                    Application.DoEvents();
-                    Thread.Sleep(10);
-                }
+                if (MessageBox.Show(this, "Are you sure you want to cancel?", "Backup Reader!!!", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
+                    cancel = true;
             });
+
+            using (var stream = new CBackupStream(fileName))
+            {
+                long lastPosition = 0;
+                var length = stream.BaseStream.Length;
+                var increment = length / 100;
+                var blocks = stream.ReadBlocks((currentPosition) =>
+                {
+                    if (currentPosition > lastPosition + increment)
+                    {
+                        lastPosition = currentPosition;
+                        int progress = (int)(currentPosition / (float)length * 100.0f);
+                        tsStatus.Text = "Reading backup file. " + progress + "% completed.";
+                        Application.DoEvents();
+                        Thread.Sleep(60);
+                    }
+                }, ()=> cancel);
+                var backupReader = new CBackupReader();
+                return backupReader.ReadCatalog(blocks);
+            }
         }
 
         private void openToolStripButton_Click(object sender, EventArgs e)
@@ -132,7 +141,8 @@ namespace BackupReader
             string TargetPath = fbdBackup.SelectedPath;
 
             // Extract the selected node and child nodes
-            node.ExtractTo(mBackupReader, TargetPath);
+            using (var stream = new CBackupStream(mFileName))
+                node.ExtractTo(stream, TargetPath);
         }
 
         private void tvDirs_NodeMouseDoubleClick(object sender, TreeNodeMouseClickEventArgs e)
@@ -146,7 +156,8 @@ namespace BackupReader
 
             // Extract the selected node to a temporary folder
             string TargetPath = System.IO.Path.GetTempPath();
-            node.ExtractTo(mBackupReader, TargetPath);
+            using (var stream = new CBackupStream(mFileName))
+                node.ExtractTo(stream, TargetPath);
 
             // Open the file
             System.Diagnostics.ProcessStartInfo psi = new System.Diagnostics.ProcessStartInfo(TargetPath + node.Name);
@@ -165,13 +176,7 @@ namespace BackupReader
 
         private void frmMain_FormClosed(object sender, FormClosedEventArgs e)
         {
-            if (mBackupReader != null) mBackupReader.Close();
-        }
-
-        private void cancelToolStripButton_Click(object sender, EventArgs e)
-        {
-            if (MessageBox.Show(this, "Are you sure you want to cancel?", "Backup Reader", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
-                mBackupReader.CancelRead();
+            
         }
 
         private void tvDirs_AfterSelect(object sender, TreeViewEventArgs e)
@@ -196,8 +201,6 @@ namespace BackupReader
             // Read the catalog from the file
             tsStatus.Text = "Reading catalog...";
             mFileName = CCatalogNode.ReadBackupFilename(ofdCatalog.FileName);
-            if (mBackupReader != null) mBackupReader.Close();
-            mBackupReader = new CBackupReader(mFileName);
             CCatalogNode node = CCatalogNode.ReadCatalog(ofdCatalog.FileName);
 
             // Populate tree view

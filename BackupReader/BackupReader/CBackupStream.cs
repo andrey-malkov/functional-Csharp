@@ -231,16 +231,17 @@ namespace BackupReader
 
         }
 
-        public IEnumerable<(EBlockType type, CDescriptorBlock data)> ReadBlocks(Action<long, long> onProgressChange)
+        public IEnumerable<CDescriptorBlock> ReadBlocks(Action<long> onProgressChange, Func<bool> ifCancel)
         {
             var tapeHeaderDescriptorBlock = ReadDBLK();
             var filemarkDescriptorBlock = ReadDBLK();
-            yield return (type: EBlockType.MTF_TAPE, data: tapeHeaderDescriptorBlock);
+            yield return tapeHeaderDescriptorBlock;
 
             while (!CheckEndOfFile())
             {
-                yield return (type: PeekNextBlockType(), data: ReadDBLK());
-                onProgressChange(BaseStream.Length, BaseStream.Position);
+                yield return ReadDBLK();
+                onProgressChange(BaseStream.Position);
+                if (ifCancel()) yield break;
             }
         }
 

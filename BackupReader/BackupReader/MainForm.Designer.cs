@@ -193,7 +193,7 @@ namespace BackupReader
             this.cancelToolStripButton.Name = "cancelToolStripButton";
             this.cancelToolStripButton.Size = new System.Drawing.Size(72, 20);
             this.cancelToolStripButton.Text = "&Cancel...";
-            this.cancelToolStripButton.Click += new System.EventHandler(this.cancelToolStripButton_Click);
+            //this.cancelToolStripButton.Click += new System.EventHandler(this.cancelToolStripButton_Click);
             // 
             // toolStripButton1
             // 
