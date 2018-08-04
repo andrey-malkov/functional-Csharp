@@ -8,14 +8,14 @@ namespace BackupReader
     /// <summary>
     /// Represents a backup file reader.
     /// </summary>
-    class CBackupReader
+    static class CBackupReader
     {
         /// <summary>
         /// Reads the entire backup file and returns a root catalog node.
         /// The root node contains backup sets/volumes/directories/files
         /// as child nodes.
         /// </summary>
-        public CCatalogNode ReadCatalog(IEnumerable<CDescriptorBlock> descriptorBlocks)
+        public static CCatalogNode ReadBackup(IEnumerable<CDescriptorBlock> descriptorBlocks)
         {
             CCatalogNode node = null;
             CCatalogNode lastSetNode = null;
@@ -54,15 +54,6 @@ namespace BackupReader
                 });
 
             return node;
-        }
-
-        public CBackupReader()
-        {
-        }
-
-        ~CBackupReader()
-        {
-            
         }
     }
 

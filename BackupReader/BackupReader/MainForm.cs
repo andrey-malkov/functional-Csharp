@@ -6,6 +6,7 @@ using System.Drawing;
 using System.Text;
 using System.Windows.Forms;
 using System.Threading;
+using static BackupReader.CBackupReader;
 
 namespace BackupReader
 {
@@ -43,8 +44,8 @@ namespace BackupReader
                         Thread.Sleep(60);
                     }
                 }, ()=> cancel);
-                var backupReader = new CBackupReader();
-                return backupReader.ReadCatalog(blocks);
+
+                return ReadBackup(blocks);
             }
         }
 
