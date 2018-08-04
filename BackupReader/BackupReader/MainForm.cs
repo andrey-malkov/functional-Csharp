@@ -7,6 +7,7 @@ using System.Text;
 using System.Windows.Forms;
 using System.Threading;
 using static BackupReader.CBackupReader;
+using System.Linq;
 
 namespace BackupReader
 {
@@ -19,7 +20,7 @@ namespace BackupReader
             InitializeComponent();
         }
 
-        private CCatalogNode ReadCatalog(string fileName)
+        private List<CatalogNode> ReadCatalog(string fileName)
         {
             bool cancel = false;
             cancelToolStripButton.Click += new EventHandler((sender, e) =>
@@ -45,7 +46,7 @@ namespace BackupReader
                     }
                 }, ()=> cancel);
 
-                return ReadBackup(blocks);
+                return ReadBackup(blocks).ToList();
             }
         }
 
@@ -65,13 +66,14 @@ namespace BackupReader
                 savecatalogToolStripButton.Enabled = false;
 
                 // Open and read the catalog
-                var rootNode = ReadCatalog(mFileName);
+                var catalogNodes = ReadCatalog(mFileName);
 
                 // Populate tree view
+                var root = catalogNodes.FirstOrDefault();
                 tvDirs.Nodes.Clear();
-                tvDirs.Nodes.Add("root", rootNode.Name, 0);
-                tvDirs.Nodes[0].Tag = rootNode;
-                PopulateTreeView(tvDirs.Nodes[0], rootNode);
+                tvDirs.Nodes.Add("root", root.Name, 0);
+                tvDirs.Nodes[0].Tag = root;
+                PopulateTreeView(tvDirs.Nodes[0], catalogNodes);
                 tsStatus.Text = "Select a single volume, folder or file to extract.";
 
                 // UI cues
@@ -84,48 +86,24 @@ namespace BackupReader
             }
         }
 
-        private void PopulateTreeView(TreeNode TNode, CCatalogNode CNode)
+        private void PopulateTreeView(TreeNode TNode, IEnumerable<CatalogNode> flatNodes)
         {
-            foreach (CCatalogNode node in CNode.Children)
-            {
-                TreeNode snode = new TreeNode(node.Name);
-                if (node.Type == ENodeType.Set)
+            var parent = (CatalogNode)TNode.Tag;
+
+            flatNodes.SkipWhile(node => node != parent)
+                .Skip(1)
+                .TakeWhile(node => (int)node.Type > (int)parent.Type)
+                .Where(node => (int)node.Type == (int)(parent.Type) + 1)
+                .Select(node => new TreeNode(node.Name)
                 {
-                    snode.ImageIndex = 1;
-                    snode.SelectedImageIndex = 1;
-                    snode.Tag = node;
-                    TNode.Nodes.Add(snode);
-                }
-                else if (node.Type == ENodeType.Volume)
-                {
-                    snode.ImageIndex = 2;
-                    snode.SelectedImageIndex = 2;
-                    snode.Tag = node;
-                    TNode.Nodes.Add(snode);
-                }
-                else if (node.Type == ENodeType.Folder)
-                {
-                    snode.ImageIndex = 3;
-                    snode.SelectedImageIndex = 3;
-                    snode.Tag = node;
-                    TNode.Nodes.Add(snode);
-                }
-                else if (node.Type == ENodeType.File)
-                {
-                    snode.ImageIndex = 4;
-                    snode.SelectedImageIndex = 4;
-                    snode.Tag = node;
-                    TNode.Nodes.Add(snode);
-                }
-                else if (node.Type == ENodeType.Database)
-                {
-                    snode.ImageIndex = 3;
-                    snode.SelectedImageIndex = 3;
-                    snode.Tag = node;
-                    TNode.Nodes.Add(snode);
-                }
-                PopulateTreeView(snode, node);
-            }
+                    ImageIndex = (int)node.Type,
+                    SelectedImageIndex = (int)node.Type,
+                    Tag = node
+                }).ToList()
+                .ForEach(tn => {
+                    TNode.Nodes.Add(tn);
+                    PopulateTreeView(tn, flatNodes);
+                });
         }
 
         private void extractToolStripButton_Click(object sender, EventArgs e)
@@ -186,10 +164,10 @@ namespace BackupReader
 
             if (tvDirs.SelectedNode == null) return;
             
-            var node = (CCatalogNode)tvDirs.SelectedNode.Tag;
+            var node = (CatalogNode)tvDirs.SelectedNode.Tag;
             if (node == null) return;
 
-            detailsTextBox.Text = node.GetDetailsString();
+            detailsTextBox.Text = node.Details;
             if ((node.Type == ENodeType.Root) || (node.Type == ENodeType.Set)) return;
 
             extractToolStripButton.Enabled = true;

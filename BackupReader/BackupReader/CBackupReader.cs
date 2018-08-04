@@ -15,45 +15,34 @@ namespace BackupReader
         /// The root node contains backup sets/volumes/directories/files
         /// as child nodes.
         /// </summary>
-        public static CCatalogNode ReadBackup(IEnumerable<CDescriptorBlock> descriptorBlocks)
+        public static IEnumerable<CatalogNode> ReadBackup(IEnumerable<CDescriptorBlock> descriptorBlocks)
         {
-            CCatalogNode node = null;
-            CCatalogNode lastSetNode = null;
-            CCatalogNode lastVolumeNode = null;
-            CCatalogNode lastFolderNode = null;
+            return descriptorBlocks
+                .Where(block => (!(block is CEndOfTapeMarkerDescriptorBlock)))
+                .SelectMany(block => toCatalogNode(block));
 
-            descriptorBlocks.Where(block => (!(block is CEndOfTapeMarkerDescriptorBlock))).ToList()
-                .ForEach(block =>
+            IEnumerable<CatalogNode> toCatalogNode(CDescriptorBlock block)
+            {
+                switch(block)
                 {
-                    switch (block)
-                    {
-                        case CTapeHeaderDescriptorBlock tapeHeaderDescriptorBlock:
-                            node = new CCatalogNode(tapeHeaderDescriptorBlock, tapeHeaderDescriptorBlock.MediaName, ENodeType.Root);
-                            break;
-                        case CStartOfDataSetDescriptorBlock dataSetDescriptorBlock:
-                            lastSetNode = node.AddSet(dataSetDescriptorBlock);
-                            break;
-                        case CVolumeDescriptorBlock volumeDescriptorBlock:
-                            lastVolumeNode = lastSetNode.AddVolume(volumeDescriptorBlock);
-                            break;
-                        case CDatabaseDescriptorBlock databaseDescriptorBlock:
-                            lastVolumeNode.AddDatabase(databaseDescriptorBlock);
-                            break;
-                        case CDirectoryDescriptorBlock directoryDescriptorBlock:
-                            CCatalogNode directoryNode = null;
-                            directoryDescriptorBlock.DirectoriesName.ToList()
-                                .ForEach(f => directoryNode = lastVolumeNode.AddFolder(directoryDescriptorBlock, f));
-
-                            if (directoryNode != null) lastFolderNode = directoryNode;
-                            break;
-                        case CFileDescriptorBlock fileDescriptorBlock:
-                            fileDescriptorBlock.FilesName.ToList()
-                                .ForEach(f => lastFolderNode.AddFile(fileDescriptorBlock, f));
-                            break;
-                    }
-                });
-
-            return node;
+                    case CTapeHeaderDescriptorBlock tapeHeaderDescriptorBlock:
+                        return new List<CatalogNode>() { new RootCatalogNode(tapeHeaderDescriptorBlock) };
+                    case CStartOfDataSetDescriptorBlock dataSetDescriptorBlock:
+                        return new List<CatalogNode>() { new SetCatalogNode(dataSetDescriptorBlock) };
+                    case CVolumeDescriptorBlock volumeDescriptorBlock:
+                        return new List<CatalogNode>() { new VolumeCatalogNode(volumeDescriptorBlock) };
+                    case CDatabaseDescriptorBlock databaseDescriptorBlock:
+                        return new List<CatalogNode>() { new DBCatalogNode(databaseDescriptorBlock) };
+                    case CDirectoryDescriptorBlock directoryDescriptorBlock:
+                        return directoryDescriptorBlock.DirectoriesName
+                            .Select(d => new DirectoryCatalogNode(directoryDescriptorBlock, d));
+                    case CFileDescriptorBlock fileDescriptorBlock:
+                        return fileDescriptorBlock.FilesName
+                            .Select(f => new FileCatalogNode(fileDescriptorBlock, f));
+                    default:
+                        return new List<CatalogNode>();
+                }
+            };
         }
     }
 

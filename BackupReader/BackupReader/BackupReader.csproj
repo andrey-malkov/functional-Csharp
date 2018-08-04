@@ -68,6 +68,7 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="CatalogNode.cs" />
     <Compile Include="CBackupReader.cs" />
     <Compile Include="CBackupStream.cs" />
     <Compile Include="CCatalogNode.cs" />
