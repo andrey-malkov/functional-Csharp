@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.IO;
 
 namespace BackupReader
 {
@@ -40,6 +41,11 @@ namespace BackupReader
                 return builder.ToString();
             }
         }
+
+        public virtual string Extract(CDescriptorBlock parent, string targetPath)
+        {
+            throw new NotImplementedException();
+        }
     }
 
     class RootCatalogNode : CatalogNode
@@ -47,6 +53,11 @@ namespace BackupReader
         public RootCatalogNode(CTapeHeaderDescriptorBlock tapeHeaderDescriptorBlock)
             : base(ENodeType.Root, tapeHeaderDescriptorBlock.MediaName, tapeHeaderDescriptorBlock.StartPosition)
             => DescriptorBlock = tapeHeaderDescriptorBlock;
+
+        public override string Extract(CDescriptorBlock parent, string targetPath)
+        {
+            throw new Exception("Tape nodes can not be extracted. Only volume, folder or file nodes can be extracted.");
+        }
     }
 
     class SetCatalogNode : CatalogNode
@@ -56,6 +67,21 @@ namespace BackupReader
             DescriptorBlock = dataSetDescriptorBlock;
             Name = "Set: " + dataSetDescriptorBlock.DataSetNumber + " - " + dataSetDescriptorBlock.DataSetName;
             Type = ENodeType.Set;
+        }
+
+        public override string Extract(CDescriptorBlock parent, string targetPath)
+        {
+            throw new Exception("Set node can not be extracted. Only volume, folder or file nodes can be extracted.");
+        }
+    }
+
+    class DBCatalogNode : CatalogNode
+    {
+        public DBCatalogNode(CDatabaseDescriptorBlock databaseDescriptorBlock)
+        {
+            DescriptorBlock = databaseDescriptorBlock;
+            Name = "Database - not yet implemented";
+            Type = ENodeType.Database;
         }
     }
 
@@ -67,6 +93,11 @@ namespace BackupReader
             Name = volumeDescriptorBlock.DeviceName;
             Type = ENodeType.Volume;
         }
+
+        public override string Extract(CDescriptorBlock parent, string targetPath)
+        {
+            return targetPath;
+        }
     }
 
     class DirectoryCatalogNode : CatalogNode
@@ -76,6 +107,28 @@ namespace BackupReader
             DescriptorBlock = directoryDescriptorBlock;
             Name = folderName;
             Type = ENodeType.Folder;
+        }
+
+        public override string Extract(CDescriptorBlock parent, string targetPath)
+        {
+            var validDirectoryName = ValidatePath(((CDirectoryDescriptorBlock)DescriptorBlock).DirectoryName);
+            return CreateDir(Path.Combine(targetPath, validDirectoryName));
+
+            string ValidatePath(string path)
+            {
+                return Path.GetDirectoryName(path).Split('\\').Last();
+            }
+
+            string CreateDir(string dirPath)
+            {
+                if (!Directory.Exists(dirPath))
+                {
+                    DirectoryInfo dirInfo = Directory.CreateDirectory(targetPath);
+                    return dirInfo.FullName;
+                }
+
+                return dirPath;
+            }
         }
     }
 
@@ -87,15 +140,21 @@ namespace BackupReader
             Name = fileName;
             Type = ENodeType.File;
         }
-    }
 
-    class DBCatalogNode : CatalogNode
-    {
-        public DBCatalogNode(CDatabaseDescriptorBlock databaseDescriptorBlock)
+        public override string Extract(CDescriptorBlock parent, string targetPath)
         {
-            DescriptorBlock = databaseDescriptorBlock;
-            Name = "Database - not yet implemented";
-            Type = ENodeType.Database;
+            var fileName = Path.Combine(targetPath, ((CFileDescriptorBlock)DescriptorBlock).FileName);
+            var file = new FileStream(fileName, FileMode.Create);
+
+            foreach (CDataStream data in DescriptorBlock.Streams)
+            {
+                if (data.Header.StreamID == "STAN")
+                {
+                    file.Write(data.Data, 0, data.Data.Length);
+                }
+            }
+            file.Close();
+            return fileName;
         }
     }
 }

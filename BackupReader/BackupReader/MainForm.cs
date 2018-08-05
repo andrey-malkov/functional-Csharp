@@ -42,7 +42,7 @@ namespace BackupReader
                         int progress = (int)(currentPosition / (float)length * 100.0f);
                         tsStatus.Text = "Reading backup file. " + progress + "% completed.";
                         Application.DoEvents();
-                        Thread.Sleep(60);
+                        Thread.Sleep(10);
                     }
                 }, ()=> cancel);
 
@@ -111,7 +111,7 @@ namespace BackupReader
             if (tvDirs.SelectedNode == null) return;
 
             // Get the selected catalog node from tree node tag
-            CCatalogNode node = (CCatalogNode)tvDirs.SelectedNode.Tag;
+            CatalogNode node = (CatalogNode)tvDirs.SelectedNode.Tag;
             if (node == null) return;
             if ((node.Type == ENodeType.Root) || (node.Type == ENodeType.Set)) return;
 
@@ -120,8 +120,23 @@ namespace BackupReader
             string TargetPath = fbdBackup.SelectedPath;
 
             // Extract the selected node and child nodes
-            using (var stream = new CBackupStream(mFileName))
-                node.ExtractTo(stream, TargetPath);
+            ExtractCatalog(GetAllNodes(tvDirs.SelectedNode), TargetPath);
+        }
+
+        private List<CatalogNode> GetAllNodes(TreeNode treeNode)
+        {
+            var nodes = new List<CatalogNode>() { (CatalogNode)treeNode.Tag };
+            nodes.AddRange(treeNode.Nodes.Cast<TreeNode>().SelectMany<TreeNode, CatalogNode>(tn => GetNodeBranch(tn)).ToList());
+            return nodes;
+
+            IEnumerable<CatalogNode> GetNodeBranch(TreeNode tn)
+            {
+                yield return (CatalogNode)tn.Tag;
+
+                foreach (TreeNode child in tn.Nodes)
+                    foreach (var childChild in GetNodeBranch(child))
+                        yield return childChild;
+            }
         }
 
         private void tvDirs_NodeMouseDoubleClick(object sender, TreeNodeMouseClickEventArgs e)
@@ -129,14 +144,13 @@ namespace BackupReader
             if (e.Button != MouseButtons.Left) return;
 
             // Get the selected catalog node from tree node tag
-            CCatalogNode node = (CCatalogNode)tvDirs.SelectedNode.Tag;
+            CatalogNode node = (CatalogNode)tvDirs.SelectedNode.Tag;
             if (node == null) return;
             if (node.Type != ENodeType.File) return;
 
             // Extract the selected node to a temporary folder
             string TargetPath = System.IO.Path.GetTempPath();
-            using (var stream = new CBackupStream(mFileName))
-                node.ExtractTo(stream, TargetPath);
+            ExtractCatalog(GetAllNodes(tvDirs.SelectedNode), TargetPath);
 
             // Open the file
             System.Diagnostics.ProcessStartInfo psi = new System.Diagnostics.ProcessStartInfo(TargetPath + node.Name);
@@ -179,14 +193,13 @@ namespace BackupReader
 
             // Read the catalog from the file
             tsStatus.Text = "Reading catalog...";
-            mFileName = CCatalogNode.ReadBackupFilename(ofdCatalog.FileName);
-            CCatalogNode node = CCatalogNode.ReadCatalog(ofdCatalog.FileName);
+            var catalogNodes = ReadCatalog(ofdCatalog.FileName);
+            var root = catalogNodes[0];
 
-            // Populate tree view
             tvDirs.Nodes.Clear();
-            tvDirs.Nodes.Add("root", node.Name, 0);
-            tvDirs.Nodes[0].Tag = node;
-            PopulateTreeView(tvDirs.Nodes[0], node);
+            tvDirs.Nodes.Add("root", root.Name, 0);
+            tvDirs.Nodes[0].Tag = root;
+            PopulateTreeView(tvDirs.Nodes[0], catalogNodes.GetRange(1, catalogNodes.Count - 1));
             tsStatus.Text = "Select a single volume, folder or file to extract.";
 
             // UI cues

@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.IO;
 
 namespace BackupReader
 {
@@ -43,6 +44,26 @@ namespace BackupReader
                         return new List<CatalogNode>();
                 }
             };
+        }
+
+        public static void ExtractCatalog(List<CatalogNode> nodes, string targetPath)
+        {
+            var rootNode = nodes[0];
+            var rootNodePath = rootNode.Extract(null, targetPath);
+            PopulateFileSystem(rootNode, rootNodePath);
+
+            void PopulateFileSystem(CatalogNode parent, string parentPath)
+            {
+                nodes.SkipWhile(node => node != parent)
+                    .Skip(1)
+                    .TakeWhile(node => (int)node.Type > (int)parent.Type)
+                    .Where(node => (int)node.Type == (int)(parent.Type) + 1)
+                    .ToList()
+                    .ForEach(node => {
+                        var path = node.Extract(parent.DescriptorBlock, parentPath);
+                        PopulateFileSystem(node, path);
+                    });
+            }
         }
     }
 
