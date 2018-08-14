@@ -42,9 +42,9 @@ namespace BackupReader
             }
         }
 
-        public virtual string Extract(CDescriptorBlock parent, string targetPath)
+        public virtual string ExtractPath
         {
-            throw new NotImplementedException();
+            get => throw new NotImplementedException();
         }
     }
 
@@ -54,24 +54,21 @@ namespace BackupReader
             : base(ENodeType.Root, tapeHeaderDescriptorBlock.MediaName, tapeHeaderDescriptorBlock.StartPosition)
             => DescriptorBlock = tapeHeaderDescriptorBlock;
 
-        public override string Extract(CDescriptorBlock parent, string targetPath)
+        public override string ExtractPath
         {
-            throw new Exception("Tape nodes can not be extracted. Only volume, folder or file nodes can be extracted.");
+            get => throw new Exception("Tape nodes can not be extracted. Only volume, folder or file nodes can be extracted.");
         }
     }
 
     class SetCatalogNode : CatalogNode
     {
         public SetCatalogNode(CStartOfDataSetDescriptorBlock dataSetDescriptorBlock)
-        {
-            DescriptorBlock = dataSetDescriptorBlock;
-            Name = "Set: " + dataSetDescriptorBlock.DataSetNumber + " - " + dataSetDescriptorBlock.DataSetName;
-            Type = ENodeType.Set;
-        }
+            : base(ENodeType.Set, "Set: " + dataSetDescriptorBlock.DataSetNumber + " - " + dataSetDescriptorBlock.DataSetName, dataSetDescriptorBlock.StartPosition)
+            => DescriptorBlock = dataSetDescriptorBlock;
 
-        public override string Extract(CDescriptorBlock parent, string targetPath)
+        public override string ExtractPath
         {
-            throw new Exception("Set node can not be extracted. Only volume, folder or file nodes can be extracted.");
+            get => throw new Exception("Set nodes can not be extracted. Only volume, folder or file nodes can be extracted.");
         }
     }
 
@@ -94,67 +91,43 @@ namespace BackupReader
             Type = ENodeType.Volume;
         }
 
-        public override string Extract(CDescriptorBlock parent, string targetPath)
+        public override string ExtractPath
         {
-            return targetPath;
+            get => "";
         }
     }
 
     class DirectoryCatalogNode : CatalogNode
     {
+        private string DirectoryName;
+
         public DirectoryCatalogNode(CDirectoryDescriptorBlock directoryDescriptorBlock, string folderName)
+            : base(ENodeType.Folder, folderName, directoryDescriptorBlock.StartPosition)
         {
             DescriptorBlock = directoryDescriptorBlock;
-            Name = folderName;
-            Type = ENodeType.Folder;
+            DirectoryName = directoryDescriptorBlock.DirectoryName;
         }
 
-        public override string Extract(CDescriptorBlock parent, string targetPath)
+        public override string ExtractPath
         {
-            var validDirectoryName = ValidatePath(((CDirectoryDescriptorBlock)DescriptorBlock).DirectoryName);
-            return CreateDir(Path.Combine(targetPath, validDirectoryName));
-
-            string ValidatePath(string path)
-            {
-                return Path.GetDirectoryName(path).Split('\\').Last();
-            }
-
-            string CreateDir(string dirPath)
-            {
-                if (!Directory.Exists(dirPath))
-                {
-                    DirectoryInfo dirInfo = Directory.CreateDirectory(targetPath);
-                    return dirInfo.FullName;
-                }
-
-                return dirPath;
-            }
+            get => Path.GetDirectoryName(DirectoryName).Split('\\').Last();
         }
     }
 
     class FileCatalogNode : CatalogNode
     {
+        private string FileName;
+
         public FileCatalogNode(CFileDescriptorBlock fileDescriptorBlock, string fileName)
+            : base(ENodeType.File, fileName, fileDescriptorBlock.StartPosition)
         {
             DescriptorBlock = fileDescriptorBlock;
-            Name = fileName;
-            Type = ENodeType.File;
+            FileName = fileDescriptorBlock.FileName;
         }
 
-        public override string Extract(CDescriptorBlock parent, string targetPath)
+        public override string ExtractPath
         {
-            var fileName = Path.Combine(targetPath, ((CFileDescriptorBlock)DescriptorBlock).FileName);
-            var file = new FileStream(fileName, FileMode.Create);
-
-            foreach (CDataStream data in DescriptorBlock.Streams)
-            {
-                if (data.Header.StreamID == "STAN")
-                {
-                    file.Write(data.Data, 0, data.Data.Length);
-                }
-            }
-            file.Close();
-            return fileName;
+            get => FileName;
         }
     }
 }

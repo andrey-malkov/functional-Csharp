@@ -203,6 +203,22 @@ namespace BackupReader
             } while ((streamtype != "SPAD") && (streamtype != ""));
         }
 
+        public IEnumerable<CDataStream> FileData
+        {
+            get => GetStreamById("STAN");
+        }
+
+        private IEnumerable<CDataStream> GetStreamById(string id)
+        {
+            foreach (CDataStream data in Streams)
+            {
+                if (data.Header.StreamID == id)
+                {
+                    yield return data;
+                }
+            }
+        }
+
         public CDescriptorBlock()
         {
         }

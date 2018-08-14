@@ -48,22 +48,34 @@ namespace BackupReader
 
         public static void ExtractCatalog(List<CatalogNode> nodes, string targetPath)
         {
-            var rootNode = nodes[0];
-            var rootNodePath = rootNode.Extract(null, targetPath);
-            PopulateFileSystem(rootNode, rootNodePath);
+            foreach (var fileData in UnfoldAllFiles(nodes, nodes.First(), targetPath))
+                PopulateFileSystem(fileData);
+        }
 
-            void PopulateFileSystem(CatalogNode parent, string parentPath)
-            {
-                nodes.SkipWhile(node => node != parent)
-                    .Skip(1)
-                    .TakeWhile(node => (int)node.Type > (int)parent.Type)
-                    .Where(node => (int)node.Type == (int)(parent.Type) + 1)
-                    .ToList()
-                    .ForEach(node => {
-                        var path = node.Extract(parent.DescriptorBlock, parentPath);
-                        PopulateFileSystem(node, path);
-                    });
-            }
+        public static IEnumerable<(string path, IEnumerable<CDataStream> data)> UnfoldAllFiles(List<CatalogNode> nodes, CatalogNode parent, string parentPath)
+        {
+            var result = nodes.SkipWhile(node => node != parent)
+                .Skip(1)
+                .TakeWhile(node => (int)node.Type > (int)parent.Type)
+                .Where(node => (int)node.Type == (int)(parent.Type) + 1)
+                .SelectMany(node =>
+                {
+                    var path = Path.Combine(parentPath, node.ExtractPath);
+                    if (node.Type != ENodeType.File)
+                        return UnfoldAllFiles(nodes, node, path);
+                    else
+                        return new List<(string, IEnumerable<CDataStream>)>() { (path, node.DescriptorBlock.FileData) };
+                });
+
+            return result.ToList();
+        }
+
+        public static void PopulateFileSystem((string path, IEnumerable<CDataStream> data) fileData)
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(fileData.path));
+            var file = new FileStream(fileData.path, FileMode.Create);
+            foreach (CDataStream data in fileData.data) file.Write(data.Data, 0, data.Data.Length);
+            file.Close();
         }
     }
 
